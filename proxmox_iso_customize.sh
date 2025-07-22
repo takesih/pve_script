@@ -60,7 +60,15 @@ fi
 
 # Mount ISO
 echo "🔗 Mounting ISO..."
-mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"
+mkdir -p "$MOUNT_DIR"
+if ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
+    echo "❌ Failed to mount ISO. Trying alternative method..."
+    # Try with different mount options
+    if ! mount -o loop,ro "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
+        echo "❌ Failed to mount ISO. Please check if the ISO file is valid."
+        exit 1
+    fi
+fi
 
 # Extract ISO contents
 echo "📦 Extracting ISO contents..."
