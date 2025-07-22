@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.7 - File replacement method (preserve original ISO)"
+echo "version 4.8 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -655,9 +655,55 @@ ls -la "$CUSTOM_ISO_DIR/" | grep -E "(boot|isolinux|EFI)" || echo "⚠️ No boo
 ls -la "$CUSTOM_ISO_DIR/boot/" 2>/dev/null || echo "⚠️ boot directory not found"
 ls -la "$CUSTOM_ISO_DIR/isolinux/" 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-# Use xorriso to modify original ISO directly (true file replacement method)
-echo "📦 Using xorriso to modify original ISO directly..."
+# Analyze original ISO boot structure first
+echo "📦 Analyzing original ISO boot structure..."
 cd "$WORK_DIR"
+
+# Extract original ISO to analyze boot structure
+echo "📦 Extracting original ISO for boot structure analysis..."
+ORIGINAL_EXTRACT_DIR="/usr/original_iso_extract"
+mkdir -p "$ORIGINAL_EXTRACT_DIR"
+
+if mount -o loop "$ISO_FILE" "$ORIGINAL_EXTRACT_DIR" 2>/dev/null; then
+    echo "✅ Original ISO mounted successfully"
+    ORIGINAL_MOUNTED=true
+else
+    echo "⚠️ Mount failed, using extraction tools..."
+    if command -v 7z &> /dev/null; then
+        7z x "$ISO_FILE" -o"$ORIGINAL_EXTRACT_DIR" -y
+    elif command -v bsdtar &> /dev/null; then
+        bsdtar -xf "$ISO_FILE" -C "$ORIGINAL_EXTRACT_DIR"
+    else
+        echo "❌ No extraction tool available"
+        exit 1
+    fi
+    ORIGINAL_MOUNTED=false
+fi
+
+# Analyze boot structure
+echo "📋 Analyzing boot structure..."
+echo "📁 Boot directory contents:"
+ls -la "$ORIGINAL_EXTRACT_DIR/boot/" 2>/dev/null || echo "⚠️ boot directory not found"
+echo "📁 Isolinux directory contents:"
+ls -la "$ORIGINAL_EXTRACT_DIR/isolinux/" 2>/dev/null || echo "⚠️ isolinux directory not found"
+echo "📁 EFI directory contents:"
+ls -la "$ORIGINAL_EXTRACT_DIR/EFI/" 2>/dev/null || echo "⚠️ EFI directory not found"
+
+# Check for different boot methods
+BOOT_METHOD="unknown"
+if [[ -f "$ORIGINAL_EXTRACT_DIR/isolinux/isolinux.bin" ]]; then
+    BOOT_METHOD="isolinux"
+    echo "✅ Found isolinux boot method"
+elif [[ -d "$ORIGINAL_EXTRACT_DIR/boot/grub" ]]; then
+    BOOT_METHOD="grub"
+    echo "✅ Found GRUB boot method"
+elif [[ -d "$ORIGINAL_EXTRACT_DIR/EFI" ]]; then
+    BOOT_METHOD="efi"
+    echo "✅ Found EFI boot method"
+else
+    echo "⚠️ Unknown boot method, will use isolinux as default"
+    BOOT_METHOD="isolinux"
+fi
 
 # Create a copy of the original ISO
 echo "📦 Creating a copy of the original ISO..."
@@ -674,21 +720,67 @@ if [[ $? -eq 0 ]]; then
     echo "✅ Successfully replaced initrd.img in the original ISO"
 else
     echo "❌ Failed to replace initrd.img in the original ISO"
-    echo "📦 Trying alternative method..."
+    echo "📦 Trying alternative method with original boot structure..."
     
-    # Alternative: extract, modify, and recreate
-    echo "📦 Using alternative method: extract, modify, recreate..."
-    xorriso -as mkisofs \
-        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-        -b isolinux/isolinux.bin \
-        -c isolinux/boot.cat \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -r -V "PROXMOX_8_4" \
-        -joliet-long \
-        "$CUSTOM_ISO_DIR"
+    # Alternative: recreate with exact original boot structure
+    echo "📦 Using alternative method: recreate with original boot structure..."
+    
+    # Copy original boot files to custom ISO
+    echo "📦 Copying original boot files..."
+    if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
+        rsync -av "$ORIGINAL_EXTRACT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
+    else
+        # Copy specific boot files
+        if [[ -f "$ORIGINAL_EXTRACT_DIR/isolinux/isolinux.bin" ]]; then
+            cp -r "$ORIGINAL_EXTRACT_DIR/isolinux/" "$CUSTOM_ISO_DIR/isolinux/"
+        fi
+        if [[ -d "$ORIGINAL_EXTRACT_DIR/boot/grub" ]]; then
+            cp -r "$ORIGINAL_EXTRACT_DIR/boot/grub/" "$CUSTOM_ISO_DIR/boot/grub/"
+        fi
+        if [[ -d "$ORIGINAL_EXTRACT_DIR/EFI" ]]; then
+            cp -r "$ORIGINAL_EXTRACT_DIR/EFI/" "$CUSTOM_ISO_DIR/EFI/"
+        fi
+    fi
+    
+    # Create ISO with original boot structure
+    if [[ "$BOOT_METHOD" == "isolinux" ]]; then
+        echo "📦 Creating ISO with isolinux boot method..."
+        xorriso -as mkisofs \
+            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+            -b isolinux/isolinux.bin \
+            -c isolinux/boot.cat \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -r -V "PROXMOX_8_4" \
+            -joliet-long \
+            "$CUSTOM_ISO_DIR"
+    elif [[ "$BOOT_METHOD" == "grub" ]]; then
+        echo "📦 Creating ISO with GRUB boot method..."
+        xorriso -as mkisofs \
+            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+            -b boot/grub/i386-pc/eltorito.img \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -r -V "PROXMOX_8_4" \
+            -joliet-long \
+            "$CUSTOM_ISO_DIR"
+    else
+        echo "📦 Creating ISO with generic boot method..."
+        xorriso -as mkisofs \
+            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+            -r -V "PROXMOX_8_4" \
+            -joliet-long \
+            "$CUSTOM_ISO_DIR"
+    fi
 fi
+
+# Clean up
+if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
+    umount "$ORIGINAL_EXTRACT_DIR" 2>/dev/null || true
+fi
+rm -rf "$ORIGINAL_EXTRACT_DIR"
 
 # Make it a hybrid ISO for DD mode compatibility
 echo "🔧 Creating hybrid ISO for DD mode compatibility..."
