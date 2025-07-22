@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.2 - Hybrid ISO creation"
+echo "version 4.3 - Proper boot structure with partition table"
 echo "=============================="
 
 # Check if running as root
@@ -670,7 +670,17 @@ ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
 
 # Determine boot method and create ISO accordingly
 if [[ -f "isolinux/isolinux.bin" ]]; then
-    echo "📦 Using isolinux boot method with hybrid ISO..."
+    echo "📦 Using isolinux boot method with proper boot structure..."
+    
+    # Ensure we have proper isolinux files
+    if [[ ! -f "isolinux/boot.cat" ]]; then
+        echo "📦 Creating boot.cat file..."
+        mkdir -p isolinux
+        # Create a minimal boot.cat
+        dd if=/dev/zero of=isolinux/boot.cat bs=1 count=2048 2>/dev/null || true
+    fi
+    
+    # Create ISO with proper boot structure
     xorriso -as mkisofs \
         -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
         -b isolinux/isolinux.bin \
@@ -680,6 +690,7 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
         -boot-info-table \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
+        -partition_offset 16 \
         .
     
     # Make it a hybrid ISO (DD mode compatible)
@@ -703,6 +714,7 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -partition_offset 16 \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             .
         echo "✅ Hybrid ISO created with xorriso"
@@ -721,7 +733,7 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
         fi
     fi
 elif [[ -d "boot/grub" ]]; then
-    echo "📦 Using GRUB boot method with hybrid ISO..."
+    echo "📦 Using GRUB boot method with proper boot structure..."
     xorriso -as mkisofs \
         -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
         -b boot/grub/i386-pc/eltorito.img \
@@ -730,6 +742,7 @@ elif [[ -d "boot/grub" ]]; then
         -boot-info-table \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
+        -partition_offset 16 \
         .
     
     # Make it a hybrid ISO
@@ -746,11 +759,12 @@ elif [[ -d "boot/grub" ]]; then
         echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
     fi
 else
-    echo "📦 Using generic ISO creation with hybrid support..."
+    echo "📦 Using generic ISO creation with proper boot structure..."
     xorriso -as mkisofs \
         -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
+        -partition_offset 16 \
         .
     
     # Try to make it hybrid if possible
@@ -783,6 +797,7 @@ else
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -partition_offset 16 \
             .
     else
         echo "❌ Failed to create ISO. Trying without isolinux..."
@@ -791,6 +806,7 @@ else
             -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -partition_offset 16 \
             .
         
         if [[ $? -eq 0 ]]; then
