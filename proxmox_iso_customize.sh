@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 3.5 - Kernel-level driver integration"
+echo "version 3.6 - Kernel-level driver integration"
 echo "=============================="
 
 # Check if running as root
@@ -96,21 +96,24 @@ fi
 echo "🔗 Extracting ISO contents..."
 mkdir -p "$MOUNT_DIR"
 
-# Try mounting first, fallback to extraction tools
+# Extract ISO contents while preserving original structure
+echo "📦 Extracting ISO contents while preserving original structure..."
 MOUNT_SUCCESS=false
+
 if mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
-    echo "📦 Extracting ISO contents using mount method..."
+    echo "📦 Using mount method to preserve original structure..."
+    # Copy entire ISO structure exactly as it is
     rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
     MOUNT_SUCCESS=true
-    # Keep mounted for isolinux files
+    echo "✅ ISO structure preserved using mount method"
 else
     echo "⚠️ Mount failed, using extraction tools..."
     
     if command -v 7z &> /dev/null; then
-        echo "📦 Using 7zip to extract ISO..."
+        echo "📦 Using 7zip to extract ISO with structure preservation..."
         7z x "$ISO_FILE" -o"$CUSTOM_ISO_DIR" -y
     elif command -v bsdtar &> /dev/null; then
-        echo "📦 Using bsdtar to extract ISO..."
+        echo "📦 Using bsdtar to extract ISO with structure preservation..."
         bsdtar -xf "$ISO_FILE" -C "$CUSTOM_ISO_DIR"
     else
         echo "📦 Installing extraction tools..."
@@ -137,7 +140,17 @@ else
     echo "✅ ISO extracted successfully using alternative method."
 fi
 
-# Unmount ISO after isolinux files are copied
+# Show original ISO structure
+echo "📋 Original ISO structure:"
+if [[ "$MOUNT_SUCCESS" == "true" ]]; then
+    echo "📁 Mounted ISO contents:"
+    ls -la "$MOUNT_DIR/" 2>/dev/null | head -20
+else
+    echo "📁 Extracted ISO contents:"
+    ls -la "$CUSTOM_ISO_DIR/" 2>/dev/null | head -20
+fi
+
+# Unmount ISO after structure analysis
 if [[ "$MOUNT_SUCCESS" == "true" ]]; then
     umount "$MOUNT_DIR" 2>/dev/null || true
 fi
@@ -606,144 +619,87 @@ rm -rf "$INITRD_DIR"
 echo "📝 Creating proper boot configuration..."
 cd "$CUSTOM_ISO_DIR"
 
-# Create isolinux configuration
-mkdir -p "isolinux"
+# Preserve original boot configuration
+echo "📋 Preserving original boot configuration..."
 
-# Copy isolinux files from original ISO if available
-echo "🔍 Checking for isolinux files in original ISO..."
-if [[ -f "$MOUNT_DIR/isolinux/isolinux.bin" ]]; then
-    echo "📦 Copying isolinux files from original ISO..."
-    cp "$MOUNT_DIR/isolinux/isolinux.bin" "isolinux/"
-    cp "$MOUNT_DIR/isolinux/vesamenu.c32" "isolinux/" 2>/dev/null || true
-    cp "$MOUNT_DIR/isolinux/ldlinux.c32" "isolinux/" 2>/dev/null || true
-    cp "$MOUNT_DIR/isolinux/libcom32.c32" "isolinux/" 2>/dev/null || true
-    cp "$MOUNT_DIR/isolinux/libutil.c32" "isolinux/" 2>/dev/null || true
-    echo "✅ isolinux files copied successfully"
-elif [[ -f "$CUSTOM_ISO_DIR/isolinux/isolinux.bin" ]]; then
-    echo "📦 Found isolinux files in extracted ISO..."
-    cp "$CUSTOM_ISO_DIR/isolinux/isolinux.bin" "isolinux/"
-    cp "$CUSTOM_ISO_DIR/isolinux/vesamenu.c32" "isolinux/" 2>/dev/null || true
-    cp "$CUSTOM_ISO_DIR/isolinux/ldlinux.c32" "isolinux/" 2>/dev/null || true
-    echo "✅ isolinux files copied from extracted ISO"
+# Check if original isolinux configuration exists
+if [[ -f "$CUSTOM_ISO_DIR/isolinux/isolinux.cfg" ]]; then
+    echo "📦 Found original isolinux.cfg, backing up..."
+    cp "$CUSTOM_ISO_DIR/isolinux/isolinux.cfg" "$CUSTOM_ISO_DIR/isolinux/isolinux.cfg.backup"
+    echo "✅ Original isolinux.cfg backed up"
+fi
+
+# Check if original isolinux files exist
+if [[ -f "$CUSTOM_ISO_DIR/isolinux/isolinux.bin" ]]; then
+    echo "📦 Original isolinux files found, preserving structure..."
+    echo "✅ Original boot structure preserved"
 else
-    echo "⚠️ isolinux.bin not found, installing syslinux package..."
+    echo "⚠️ Original isolinux files not found, checking for alternative boot methods..."
     
-    # Install syslinux package to get isolinux files
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y syslinux isolinux
-    elif command -v yum &> /dev/null; then
-        yum install -y syslinux
-    elif command -v dnf &> /dev/null; then
-        dnf install -y syslinux
+    # Check for GRUB boot
+    if [[ -d "$CUSTOM_ISO_DIR/boot/grub" ]]; then
+        echo "📦 Found GRUB boot configuration, preserving..."
+        echo "✅ GRUB boot structure preserved"
     fi
     
-    # Copy isolinux files from system
-    if [[ -f "/usr/lib/ISOLINUX/isolinux.bin" ]]; then
-        echo "📦 Copying isolinux files from system..."
-        cp /usr/lib/ISOLINUX/isolinux.bin "isolinux/"
-        cp /usr/lib/syslinux/vesamenu.c32 "isolinux/" 2>/dev/null || true
-        cp /usr/lib/syslinux/ldlinux.c32 "isolinux/" 2>/dev/null || true
-        cp /usr/lib/syslinux/libcom32.c32 "isolinux/" 2>/dev/null || true
-        cp /usr/lib/syslinux/libutil.c32 "isolinux/" 2>/dev/null || true
-        echo "✅ isolinux files copied from system"
-    else
-        echo "❌ isolinux.bin not found anywhere, creating minimal boot files..."
-        # Create minimal isolinux.bin (this is a placeholder)
-        echo "Minimal isolinux.bin" > "isolinux/isolinux.bin"
-        echo "Minimal vesamenu.c32" > "isolinux/vesamenu.c32"
-        echo "Minimal ldlinux.c32" > "isolinux/ldlinux.c32"
+    # Check for EFI boot
+    if [[ -d "$CUSTOM_ISO_DIR/EFI" ]]; then
+        echo "📦 Found EFI boot configuration, preserving..."
+        echo "✅ EFI boot structure preserved"
     fi
 fi
 
-# Verify isolinux.bin exists
-if [[ ! -f "isolinux/isolinux.bin" ]]; then
-    echo "❌ isolinux.bin still not found, creating dummy file..."
-    echo "dummy isolinux.bin" > "isolinux/isolinux.bin"
-fi
+# Show current boot structure
+echo "📋 Current boot structure:"
+ls -la "$CUSTOM_ISO_DIR/" | grep -E "(boot|isolinux|EFI)" || echo "⚠️ No boot directories found"
+ls -la "$CUSTOM_ISO_DIR/boot/" 2>/dev/null || echo "⚠️ boot directory not found"
+ls -la "$CUSTOM_ISO_DIR/isolinux/" 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-echo "📋 isolinux directory contents:"
-ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
-
-cat > "isolinux/isolinux.cfg" << EOF
-DEFAULT vesamenu.c32
-PROMPT 0
-MENU TITLE Proxmox VE ${PROXMOX_VERSION} with R8168 Driver
-TIMEOUT 300
-
-LABEL proxmox-r8168
-    MENU LABEL Proxmox VE ${PROXMOX_VERSION} (with R8168 driver)
-    KERNEL /boot/vmlinuz
-    APPEND root=live:CDLABEL=PROXMOX_8_4 ro quiet nomodeset
-    INITRD /boot/initrd.img
-
-LABEL proxmox-safe
-    MENU LABEL Proxmox VE ${PROXMOX_VERSION} (Safe Mode)
-    KERNEL /boot/vmlinuz
-    APPEND root=live:CDLABEL=PROXMOX_8_4 ro quiet nomodeset single
-    INITRD /boot/initrd.img
-
-LABEL proxmox-debug
-    MENU LABEL Proxmox VE ${PROXMOX_VERSION} (Debug Mode)
-    KERNEL /boot/vmlinuz
-    APPEND root=live:CDLABEL=PROXMOX_8_4 ro debug nomodeset
-    INITRD /boot/initrd.img
-EOF
-
-# Create ISO with proper boot structure
-echo "📦 Creating custom ISO with proper boot structure..."
+# Create ISO with original structure preserved
+echo "📦 Creating custom ISO with original structure preserved..."
 cd "$CUSTOM_ISO_DIR"
 
-# Ensure required boot files exist
-echo "📁 Ensuring required boot files..."
-echo "📋 Current directory structure:"
-ls -la 2>/dev/null || echo "⚠️ Cannot list current directory"
-echo "📋 boot directory:"
+# Show final structure before ISO creation
+echo "📋 Final structure before ISO creation:"
+echo "📁 Root directory:"
+ls -la 2>/dev/null | head -10
+echo "📁 Boot directory:"
 ls -la boot/ 2>/dev/null || echo "⚠️ boot directory not found"
-echo "📋 isolinux directory:"
+echo "📁 Isolinux directory:"
 ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-# Ensure isolinux directory exists and has required files
-mkdir -p isolinux
-if [[ ! -f "isolinux/isolinux.bin" ]]; then
-    echo "❌ isolinux.bin missing, creating dummy file..."
-    echo "dummy isolinux.bin" > isolinux/isolinux.bin
-fi
-
-# Create ISO using isolinux
-echo "📦 Generating custom ISO with isolinux..."
-
-# Final check for isolinux.bin
-if [[ ! -f "isolinux/isolinux.bin" ]]; then
-    echo "❌ isolinux.bin not found. Creating minimal boot structure..."
-    mkdir -p isolinux
-    echo "Minimal isolinux.bin" > isolinux/isolinux.bin
-    echo "Minimal vesamenu.c32" > isolinux/vesamenu.c32
-fi
-
-# Verify isolinux.bin exists and show its size
+# Determine boot method and create ISO accordingly
 if [[ -f "isolinux/isolinux.bin" ]]; then
-    echo "✅ isolinux.bin found: $(ls -lh isolinux/isolinux.bin)"
+    echo "📦 Using isolinux boot method..."
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -b isolinux/isolinux.bin \
+        -c isolinux/boot.cat \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
+elif [[ -d "boot/grub" ]]; then
+    echo "📦 Using GRUB boot method..."
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -b boot/grub/i386-pc/eltorito.img \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
 else
-    echo "❌ isolinux.bin still missing!"
+    echo "📦 Using generic ISO creation (no specific boot method)..."
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
 fi
-
-# Create boot catalog
-if command -v isohybrid &> /dev/null; then
-    echo "📦 Creating boot catalog..."
-    isohybrid --forcehd0 isolinux/isolinux.bin 2>/dev/null || true
-fi
-
-echo "🔧 Creating ISO with isolinux boot..."
-xorriso -as mkisofs \
-    -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-    -b isolinux/isolinux.bin \
-    -c isolinux/boot.cat \
-    -no-emul-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
-    -r -V "PROXMOX_8_4" \
-    -joliet-long \
-    .
 
 if [[ $? -eq 0 ]]; then
     echo "✅ Custom ISO created successfully!"
