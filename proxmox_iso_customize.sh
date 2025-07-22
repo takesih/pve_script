@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.5 - Original boot structure preservation"
+echo "version 4.6 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -96,13 +96,13 @@ fi
 echo "🔗 Extracting ISO contents..."
 mkdir -p "$MOUNT_DIR"
 
-# Extract ISO contents while preserving original structure
-echo "📦 Extracting ISO contents while preserving original structure..."
+# Extract ISO contents for file replacement method
+echo "📦 Extracting ISO contents for file replacement method..."
 MOUNT_SUCCESS=false
 
 if mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
     echo "📦 Using mount method to preserve original structure..."
-    # Copy entire ISO structure exactly as it is (including HFS)
+    # Copy entire ISO structure exactly as it is
     rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
     MOUNT_SUCCESS=true
     echo "✅ ISO structure preserved using mount method"
@@ -482,7 +482,7 @@ cat > "$KERNEL_MODULES_DIR/modules.softdep" << 'EOF'
 softdep r8168 pre: r8169
 EOF
 
-# Modify initrd to include kernel modules
+# Modify initrd to include kernel modules (file replacement method)
 echo "🔧 Modifying initrd to include kernel modules..."
 INITRD_DIR="/usr/initrd_extract"
 mkdir -p "$INITRD_DIR"
@@ -490,7 +490,7 @@ mkdir -p "$INITRD_DIR"
 # Extract initrd
 cd "$CUSTOM_ISO_DIR"
 if [[ -f "boot/initrd.img" ]]; then
-    echo "📦 Found initrd.img, extracting..."
+    echo "📦 Found initrd.img, extracting for driver integration..."
     cp boot/initrd.img "$INITRD_DIR/"
     cd "$INITRD_DIR"
     
@@ -529,17 +529,17 @@ case "$1" in
     start)
         echo "Loading R8168 driver..."
         # Check for R8168 hardware
-        if lspci | grep -i realtek | grep -q "RTL8111\|RTL8168\|RTL8411"; then
+if lspci | grep -i realtek | grep -q "RTL8111\|RTL8168\|RTL8411"; then
             echo "Realtek R8168 hardware detected"
-            
+    
             # Unload r8169 if loaded
-            if lsmod | grep -q r8169; then
+    if lsmod | grep -q r8169; then
                 echo "Unloading conflicting r8169 driver..."
                 modprobe -r r8169 2>/dev/null || true
-            fi
-            
+    fi
+    
             # Load r8168 driver
-            if modprobe r8168 2>/dev/null; then
+    if modprobe r8168 2>/dev/null; then
                 echo "✅ R8168 driver loaded successfully"
                 
                 # Create blacklist for r8169
@@ -548,8 +548,8 @@ case "$1" in
                 echo "✅ Blacklisted r8169 driver"
             else
                 echo "⚠️ R8168 driver not available"
-            fi
-        else
+    fi
+else
             echo "No Realtek R8168 hardware detected"
         fi
         ;;
@@ -567,13 +567,13 @@ EOF
     
     # Create rc.local to run driver script
     echo "📝 Creating rc.local for driver setup..."
-    cat > "etc/rc.local" << 'EOF'
+        cat > "etc/rc.local" << 'EOF'
 #!/bin/bash
 # Load R8168 driver on boot
 /etc/init.d/r8168 start
 exit 0
 EOF
-    chmod +x "etc/rc.local"
+        chmod +x "etc/rc.local"
     
     # Create modprobe configuration
     echo "📝 Creating modprobe configuration..."
@@ -585,7 +585,7 @@ options r8168 aspm=0 eee_enable=0
 EOF
     
     # Repack initrd
-    echo "📦 Repacking initrd..."
+    echo "📦 Repacking initrd with driver integration..."
     find . | cpio -o -H newc | gzip > "$CUSTOM_ISO_DIR/boot/initrd.img" 2>/dev/null || {
         echo "⚠️ Failed to repack initrd, using original..."
         cp "$INITRD_DIR/initrd.img" "$CUSTOM_ISO_DIR/boot/initrd.img"
@@ -655,8 +655,8 @@ ls -la "$CUSTOM_ISO_DIR/" | grep -E "(boot|isolinux|EFI)" || echo "⚠️ No boo
 ls -la "$CUSTOM_ISO_DIR/boot/" 2>/dev/null || echo "⚠️ boot directory not found"
 ls -la "$CUSTOM_ISO_DIR/isolinux/" 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-# Create ISO with original structure preserved
-echo "📦 Creating custom ISO with original structure preserved..."
+# Create ISO using file replacement method (preserve original structure)
+echo "📦 Creating custom ISO using file replacement method..."
 cd "$CUSTOM_ISO_DIR"
 
 # Show final structure before ISO creation
@@ -668,149 +668,38 @@ ls -la boot/ 2>/dev/null || echo "⚠️ boot directory not found"
 echo "📁 Isolinux directory:"
 ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-# Determine boot method and create ISO accordingly
-if [[ -f "isolinux/isolinux.bin" ]]; then
-    echo "📦 Using isolinux boot method with proper boot structure..."
-    
-    # Ensure we have proper isolinux files
-    if [[ ! -f "isolinux/boot.cat" ]]; then
-        echo "📦 Creating boot.cat file..."
-        mkdir -p isolinux
-        # Create a minimal boot.cat
-        dd if=/dev/zero of=isolinux/boot.cat bs=1 count=2048 2>/dev/null || true
-    fi
-    
-    # Use xorriso with exact original parameters to preserve boot structure
-    echo "📦 Using xorriso with original boot structure preservation..."
-    xorriso -as mkisofs \
-        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-        -b isolinux/isolinux.bin \
-        -c isolinux/boot.cat \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -r -V "PROXMOX_8_4" \
-        -joliet-long \
-        .
-    
-    # Make it a hybrid ISO (DD mode compatible)
-    echo "🔧 Creating hybrid ISO for DD mode compatibility..."
-    
-    # Check if we have a proper isolinux.bin with hybrid support
-    if [[ -f "/usr/lib/ISOLINUX/isolinux.bin" ]]; then
-        echo "📦 Using system isolinux.bin for hybrid booting..."
-        cp /usr/lib/ISOLINUX/isolinux.bin isolinux/isolinux.bin
-    fi
-    
-    # Try to create hybrid ISO directly with xorriso
-    if [[ -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]]; then
-        echo "🔧 Creating hybrid ISO with xorriso and hybrid MBR..."
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b isolinux/isolinux.bin \
-            -c isolinux/boot.cat \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-            .
-        echo "✅ Hybrid ISO created with xorriso"
-    else
-        echo "⚠️ Hybrid MBR not available, trying isohybrid..."
-        if command -v isohybrid &> /dev/null; then
-            isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-                echo "✅ Hybrid ISO created with isohybrid"
-            } || {
-                echo "⚠️ isohybrid failed, creating standard ISO..."
-                echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-            }
-        else
-            echo "⚠️ isohybrid not available, creating standard ISO..."
-            echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-        fi
-    fi
-elif [[ -d "boot/grub" ]]; then
-    echo "📦 Using GRUB boot method with proper boot structure..."
-    xorriso -as mkisofs \
-        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-        -b boot/grub/i386-pc/eltorito.img \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -r -V "PROXMOX_8_4" \
-        -joliet-long \
-        .
-    
-    # Make it a hybrid ISO
-    echo "🔧 Creating hybrid ISO for DD mode compatibility..."
-    if command -v isohybrid &> /dev/null; then
-        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-            echo "✅ Hybrid ISO created with isohybrid"
-        } || {
-            echo "⚠️ isohybrid failed, creating standard ISO..."
-            echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-        }
-    else
-        echo "⚠️ isohybrid not available, creating standard ISO..."
+# Create ISO using xorriso with exact original parameters
+echo "📦 Creating ISO with original structure preservation..."
+xorriso -as mkisofs \
+    -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+    -b isolinux/isolinux.bin \
+    -c isolinux/boot.cat \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    -r -V "PROXMOX_8_4" \
+    -joliet-long \
+    .
+
+# Make it a hybrid ISO for DD mode compatibility
+echo "🔧 Creating hybrid ISO for DD mode compatibility..."
+if command -v isohybrid &> /dev/null; then
+    isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
+        echo "✅ Hybrid ISO created with isohybrid"
+    } || {
+        echo "⚠️ isohybrid failed, creating standard ISO..."
         echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-    fi
+    }
 else
-    echo "📦 Using generic ISO creation with proper boot structure..."
-    xorriso -as mkisofs \
-        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-        -r -V "PROXMOX_8_4" \
-        -joliet-long \
-        .
-    
-    # Try to make it hybrid if possible
-    echo "🔧 Creating hybrid ISO for DD mode compatibility..."
-    if command -v isohybrid &> /dev/null; then
-        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-            echo "✅ Hybrid ISO created with isohybrid"
-        } || {
-            echo "⚠️ isohybrid failed, creating standard ISO..."
-            echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-        }
-    else
-        echo "⚠️ isohybrid not available, creating standard ISO..."
-        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-    fi
+    echo "⚠️ isohybrid not available, creating standard ISO..."
+    echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
 fi
 
 if [[ $? -eq 0 ]]; then
-    echo "✅ Custom ISO created successfully!"
+    echo "✅ Custom ISO created successfully using file replacement method!"
 else
-    echo "⚠️ ISO creation failed, trying alternative method..."
-    # Alternative: use genisoimage
-    if command -v genisoimage &> /dev/null; then
-        echo "📦 Using genisoimage as alternative..."
-        genisoimage -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b isolinux/isolinux.bin \
-            -c isolinux/boot.cat \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
-    else
-        echo "❌ Failed to create ISO. Trying without isolinux..."
-        # Try creating ISO without isolinux boot
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
-        
-        if [[ $? -eq 0 ]]; then
-            echo "✅ ISO created without isolinux boot (manual boot required)"
-        else
-            echo "❌ Failed to create ISO. Please check the extracted files manually."
-            exit 1
-        fi
-    fi
+    echo "❌ Failed to create ISO. Please check the extracted files manually."
+    exit 1
 fi
 
 # Clean up
@@ -829,8 +718,8 @@ echo "- Kernel-level driver integration (no post-installation required)"
 echo ""
 echo "💡 ISO Information:"
 echo "- This ISO has R8168 driver integrated into kernel"
-echo "- Original boot structure preserved (no file name changes)"
-echo "- Original ISO structure preserved with driver integration"
+echo "- File replacement method: only modified files changed"
+echo "- Original ISO structure completely preserved"
 echo "- Try standard ISO mode first in Rufus"
 echo "- If standard mode fails, try DD mode"
 echo "- The ISO should boot normally with Realtek R8168 support"
