@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.14 - File replacement method (preserve original ISO)"
+echo "version 4.15 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -750,50 +750,54 @@ else
     echo "📦 Using alternative method: recreate with original boot structure..."
     
     # Copy original boot files to custom ISO
-    echo "📦 Copying original boot files..."
-    if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
-        rsync -av "$ORIGINAL_EXTRACT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
-    else
-        # Copy specific boot files with better preservation
-        echo "📦 Copying boot files from extracted original ISO..."
-        
-        # Copy isolinux files
-        if [[ -f "$ORIGINAL_EXTRACT_DIR/isolinux/isolinux.bin" ]]; then
-            echo "📦 Copying isolinux files..."
-            cp -r "$ORIGINAL_EXTRACT_DIR/isolinux/" "$CUSTOM_ISO_DIR/isolinux/"
-        fi
-        
-        # Copy GRUB files
-        if [[ -d "$ORIGINAL_EXTRACT_DIR/boot/grub" ]]; then
-            echo "📦 Copying GRUB files..."
-            cp -r "$ORIGINAL_EXTRACT_DIR/boot/grub/" "$CUSTOM_ISO_DIR/boot/grub/"
-        fi
-        
-        # Copy EFI files
-        if [[ -d "$ORIGINAL_EXTRACT_DIR/EFI" ]]; then
-            echo "📦 Copying EFI files..."
-            cp -r "$ORIGINAL_EXTRACT_DIR/EFI/" "$CUSTOM_ISO_DIR/EFI/"
-        fi
-        
-        # Copy other boot-related files
-        if [[ -f "$ORIGINAL_EXTRACT_DIR/boot/grub/grub.cfg" ]]; then
-            echo "📦 Copying GRUB configuration..."
-            cp "$ORIGINAL_EXTRACT_DIR/boot/grub/grub.cfg" "$CUSTOM_ISO_DIR/boot/grub/grub.cfg"
-        fi
-        
-        if [[ -f "$ORIGINAL_EXTRACT_DIR/boot/grub/loopback.cfg" ]]; then
-            echo "📦 Copying loopback configuration..."
-            cp "$ORIGINAL_EXTRACT_DIR/boot/grub/loopback.cfg" "$CUSTOM_ISO_DIR/boot/grub/loopback.cfg"
-        fi
-        
-        # Copy any other important boot files
-        for file in "$ORIGINAL_EXTRACT_DIR"/boot/*; do
-            if [[ -f "$file" ]] && [[ ! -f "$CUSTOM_ISO_DIR/boot/$(basename "$file")" ]]; then
-                echo "📦 Copying boot file: $(basename "$file")"
-                cp "$file" "$CUSTOM_ISO_DIR/boot/"
-            fi
-        done
+echo "📦 Copying original boot files..."
+if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
+    rsync -av "$ORIGINAL_EXTRACT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
+else
+    # Copy specific boot files with better preservation
+    echo "📦 Copying boot files from extracted original ISO..."
+    
+    # Copy isolinux files
+    if [[ -f "$ORIGINAL_EXTRACT_DIR/isolinux/isolinux.bin" ]]; then
+        echo "📦 Copying isolinux files..."
+        cp -r "$ORIGINAL_EXTRACT_DIR/isolinux/" "$CUSTOM_ISO_DIR/isolinux/"
     fi
+    
+    # Copy GRUB files with complete structure
+    if [[ -d "$ORIGINAL_EXTRACT_DIR/boot/grub" ]]; then
+        echo "📦 Copying GRUB files with complete structure..."
+        rm -rf "$CUSTOM_ISO_DIR/boot/grub"
+        cp -r "$ORIGINAL_EXTRACT_DIR/boot/grub/" "$CUSTOM_ISO_DIR/boot/grub/"
+        
+        # Show GRUB files for debugging
+        echo "📋 GRUB files copied:"
+        ls -la "$CUSTOM_ISO_DIR/boot/grub/"
+    fi
+    
+    # Copy EFI files
+    if [[ -d "$ORIGINAL_EXTRACT_DIR/EFI" ]]; then
+        echo "📦 Copying EFI files..."
+        cp -r "$ORIGINAL_EXTRACT_DIR/EFI/" "$CUSTOM_ISO_DIR/EFI/"
+    fi
+    
+    # Copy all boot files from original
+    echo "📦 Copying all boot files from original ISO..."
+    for file in "$ORIGINAL_EXTRACT_DIR"/boot/*; do
+        if [[ -f "$file" ]]; then
+            echo "📦 Copying boot file: $(basename "$file")"
+            cp "$file" "$CUSTOM_ISO_DIR/boot/"
+        fi
+    done
+    
+    # Copy any other important files from root
+    echo "📦 Copying other important files from original ISO..."
+    for file in "$ORIGINAL_EXTRACT_DIR"/*; do
+        if [[ -f "$file" ]] && [[ ! -f "$CUSTOM_ISO_DIR/$(basename "$file")" ]]; then
+            echo "📦 Copying file: $(basename "$file")"
+            cp "$file" "$CUSTOM_ISO_DIR/"
+        fi
+    done
+fi
     
     # Create ISO with original boot structure and hybrid MBR
     if [[ "$BOOT_METHOD" == "isolinux" ]]; then
