@@ -15,6 +15,7 @@ CUSTOM_ISO_DIR="/tmp/custom_iso"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration"
+echo "version 1.0"
 echo "=============================="
 
 # Check if running as root
@@ -343,15 +344,25 @@ ls -la drivers/ 2>/dev/null || echo "⚠️ drivers directory created"
 # Generate ISO
 echo "📦 Generating custom ISO..."
 
-# Check if grub boot image exists
-GRUB_BOOT_IMG="/usr/lib/grub/i386-pc/boot_hybrid.img"
-if [[ ! -f "$GRUB_BOOT_IMG" ]]; then
-    echo "⚠️ Grub boot image not found, trying alternative locations..."
-    GRUB_BOOT_IMG=$(find /usr -name "boot_hybrid.img" 2>/dev/null | head -1)
-    if [[ -z "$GRUB_BOOT_IMG" ]]; then
-        echo "⚠️ No grub boot image found, creating ISO without custom boot image..."
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+# Create ISO without grub boot image (simpler approach)
+xorriso -as mkisofs \
+    -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+    -b boot/grub/i386-pc/eltorito.img \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    -r -V "PROXMOX_8_4" \
+    -joliet-long \
+    .
+
+if [[ $? -eq 0 ]]; then
+    echo "✅ Custom ISO created successfully!"
+else
+    echo "⚠️ ISO creation failed, trying alternative method..."
+    # Alternative: use genisoimage if available
+    if command -v genisoimage &> /dev/null; then
+        echo "📦 Using genisoimage as alternative..."
+        genisoimage -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -b boot/grub/i386-pc/eltorito.img \
             -no-emul-boot \
             -boot-load-size 4 \
@@ -360,32 +371,9 @@ if [[ ! -f "$GRUB_BOOT_IMG" ]]; then
             -joliet-long \
             .
     else
-        echo "✅ Found grub boot image: $GRUB_BOOT_IMG"
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b boot/grub/i386-pc/eltorito.img \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            --grub2-boot-info \
-            --grub2-mbr "$GRUB_BOOT_IMG" \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
+        echo "❌ Failed to create ISO. Please check the extracted files manually."
+        exit 1
     fi
-else
-    echo "✅ Using grub boot image: $GRUB_BOOT_IMG"
-    xorriso -as mkisofs \
-        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-        -b boot/grub/i386-pc/eltorito.img \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        --grub2-boot-info \
-        --grub2-mbr "$GRUB_BOOT_IMG" \
-        -r -V "PROXMOX_8_4" \
-        -joliet-long \
-        .
 fi
 
 # Clean up
