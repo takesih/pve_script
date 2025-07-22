@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.6 - File replacement method (preserve original ISO)"
+echo "version 4.7 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -655,31 +655,40 @@ ls -la "$CUSTOM_ISO_DIR/" | grep -E "(boot|isolinux|EFI)" || echo "⚠️ No boo
 ls -la "$CUSTOM_ISO_DIR/boot/" 2>/dev/null || echo "⚠️ boot directory not found"
 ls -la "$CUSTOM_ISO_DIR/isolinux/" 2>/dev/null || echo "⚠️ isolinux directory not found"
 
-# Create ISO using file replacement method (preserve original structure)
-echo "📦 Creating custom ISO using file replacement method..."
-cd "$CUSTOM_ISO_DIR"
+# Use xorriso to modify original ISO directly (true file replacement method)
+echo "📦 Using xorriso to modify original ISO directly..."
+cd "$WORK_DIR"
 
-# Show final structure before ISO creation
-echo "📋 Final structure before ISO creation:"
-echo "📁 Root directory:"
-ls -la 2>/dev/null | head -10
-echo "📁 Boot directory:"
-ls -la boot/ 2>/dev/null || echo "⚠️ boot directory not found"
-echo "📁 Isolinux directory:"
-ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
+# Create a copy of the original ISO
+echo "📦 Creating a copy of the original ISO..."
+cp "$ISO_FILE" "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
 
-# Create ISO using xorriso with exact original parameters
-echo "📦 Creating ISO with original structure preservation..."
-xorriso -as mkisofs \
-    -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-    -b isolinux/isolinux.bin \
-    -c isolinux/boot.cat \
-    -no-emul-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
-    -r -V "PROXMOX_8_4" \
-    -joliet-long \
-    .
+# Use xorriso to replace only the modified initrd.img in the original ISO
+echo "📦 Replacing initrd.img in the original ISO..."
+xorriso -indev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+    -outdev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+    -map "$CUSTOM_ISO_DIR/boot/initrd.img" "/boot/initrd.img" \
+    -commit
+
+if [[ $? -eq 0 ]]; then
+    echo "✅ Successfully replaced initrd.img in the original ISO"
+else
+    echo "❌ Failed to replace initrd.img in the original ISO"
+    echo "📦 Trying alternative method..."
+    
+    # Alternative: extract, modify, and recreate
+    echo "📦 Using alternative method: extract, modify, recreate..."
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -b isolinux/isolinux.bin \
+        -c isolinux/boot.cat \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        "$CUSTOM_ISO_DIR"
+fi
 
 # Make it a hybrid ISO for DD mode compatibility
 echo "🔧 Creating hybrid ISO for DD mode compatibility..."
