@@ -301,6 +301,7 @@ rm -rf "$INITRD_DIR"
 
 # Create custom boot menu
 echo "📝 Creating custom boot menu..."
+cd "$CUSTOM_ISO_DIR"
 mkdir -p "boot/grub"
 cat > "boot/grub/grub.cfg" << 'EOF'
 set timeout=5
@@ -322,8 +323,10 @@ echo "📦 Creating custom ISO..."
 cd "$CUSTOM_ISO_DIR"
 
 # Ensure required directories exist
+echo "📁 Creating required directories..."
 mkdir -p boot/grub
 mkdir -p boot/grub/i386-pc
+mkdir -p drivers
 
 # Check if required boot files exist
 if [[ ! -f "boot/grub/i386-pc/eltorito.img" ]]; then
@@ -331,6 +334,11 @@ if [[ ! -f "boot/grub/i386-pc/eltorito.img" ]]; then
     # Create minimal boot structure
     echo "Minimal boot structure" > boot/grub/i386-pc/eltorito.img
 fi
+
+# Ensure all required files exist
+echo "📋 Checking required files..."
+ls -la boot/grub/ 2>/dev/null || echo "⚠️ boot/grub directory created"
+ls -la drivers/ 2>/dev/null || echo "⚠️ drivers directory created"
 
 # Generate ISO
 xorriso -as mkisofs \
