@@ -85,7 +85,14 @@ if [[ "$choice" == "1" ]]; then
     cat > "$DDNS_SCRIPT" << EOF
 #!/bin/bash
 # DNSZI DDNS Update Script
-curl -s '${DDNS_URL}'
+echo "🔄 Updating DNSZI DDNS..."
+response=\$(curl -s '${DDNS_URL}')
+echo "Response: \$response"
+if [ \$? -eq 0 ]; then
+    echo "✅ DDNS update completed successfully"
+else
+    echo "❌ DDNS update failed"
+fi
 EOF
     
     chmod +x "$DDNS_SCRIPT"
