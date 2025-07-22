@@ -54,8 +54,15 @@ echo "📥 Downloading Proxmox ${PROXMOX_VERSION} ISO..."
 cd "$WORK_DIR"
 if [[ -f "proxmox-ve_${PROXMOX_VERSION}-1.iso" ]]; then
     echo "ℹ️ ISO file already exists, skipping download."
+    echo "📁 Using existing ISO: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
 else
+    echo "📥 Downloading from: $PROXMOX_ISO_URL"
     wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Failed to download ISO. Please check the URL and try again."
+        exit 1
+    fi
+    echo "✅ Download completed: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
 fi
 
 # Mount ISO
@@ -198,7 +205,63 @@ echo "- Custom ISO: $WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
 echo "- Driver files included in initrd"
 echo "- Custom boot menu with R8168 driver option"
 echo ""
-echo "💡 Next steps:"
-echo "1. Test the custom ISO in a virtual machine"
-echo "2. Burn to USB or DVD for installation"
-echo "3. The R8168 driver will be automatically loaded during installation" 
+
+# Setup web server for download
+echo "🌐 Setting up download server..."
+CUSTOM_ISO_PATH="$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
+DOWNLOAD_DIR="/var/www/html"
+DOWNLOAD_PORT="8080"
+
+# Install web server if not available
+if ! command -v python3 &> /dev/null; then
+    echo "📦 Installing Python3 for web server..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y python3
+    elif command -v yum &> /dev/null; then
+        yum install -y python3
+    elif command -v dnf &> /dev/null; then
+        dnf install -y python3
+    fi
+fi
+
+# Copy ISO to web directory
+mkdir -p "$DOWNLOAD_DIR"
+cp "$CUSTOM_ISO_PATH" "$DOWNLOAD_DIR/"
+chmod 644 "$DOWNLOAD_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
+
+# Get server IP
+SERVER_IP=$(hostname -I | awk '{print $1}')
+if [[ -z "$SERVER_IP" ]]; then
+    SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
+fi
+
+echo ""
+echo "🌐 Download Server Information:"
+echo "=============================="
+echo "📁 ISO Location: $DOWNLOAD_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
+echo "📊 File Size: $(ls -lh "$DOWNLOAD_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" | awk '{print $5}')"
+echo "🌍 Server IP: $SERVER_IP"
+echo ""
+echo "📥 Download Links:"
+echo "=============================="
+echo "HTTP: http://$SERVER_IP:8080/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
+echo "Direct: http://$SERVER_IP:8080/"
+echo ""
+echo "🚀 Starting web server..."
+echo "Press Ctrl+C to stop the server"
+echo "=============================="
+
+# Start web server
+cd "$DOWNLOAD_DIR"
+python3 -m http.server "$DOWNLOAD_PORT" 2>/dev/null || {
+    echo "⚠️ Failed to start Python web server, trying alternative..."
+    if command -v python &> /dev/null; then
+        python -m SimpleHTTPServer "$DOWNLOAD_PORT" 2>/dev/null || {
+            echo "❌ Could not start web server. Please install a web server manually."
+            echo "💡 Alternative: Use scp or rsync to copy the ISO file"
+        }
+    else
+        echo "❌ Python not available. Please install a web server manually."
+        echo "💡 Alternative: Use scp or rsync to copy the ISO file"
+    fi
+} 
