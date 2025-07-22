@@ -54,30 +54,31 @@ echo "📥 Checking Proxmox ${PROXMOX_VERSION} ISO..."
 cd "$WORK_DIR"
 
 # Check if ISO already exists and has valid size (at least 1GB)
-if [[ -f "proxmox-ve_${PROXMOX_VERSION}-1.iso" ]]; then
-    ISO_SIZE=$(stat -c%s "proxmox-ve_${PROXMOX_VERSION}-1.iso" 2>/dev/null || echo "0")
+ISO_FILE="$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
+if [[ -f "$ISO_FILE" ]]; then
+    ISO_SIZE=$(stat -c%s "$ISO_FILE" 2>/dev/null || echo "0")
     if [[ $ISO_SIZE -gt 1000000000 ]]; then  # Greater than 1GB
         echo "ℹ️ ISO file already exists and appears complete."
-        echo "📁 Using existing ISO: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+        echo "📁 Using existing ISO: $(ls -lh "$ISO_FILE")"
         echo "📊 File size: $((ISO_SIZE / 1024 / 1024)) MB"
     else
         echo "⚠️ Existing ISO file appears incomplete or corrupted."
         echo "📥 Re-downloading from: $PROXMOX_ISO_URL"
-        wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
+        wget --no-check-certificate "$PROXMOX_ISO_URL" -O "$ISO_FILE"
         if [[ $? -ne 0 ]]; then
             echo "❌ Failed to download ISO. Please check the URL and try again."
             exit 1
         fi
-        echo "✅ Download completed: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+        echo "✅ Download completed: $(ls -lh "$ISO_FILE")"
     fi
 else
     echo "📥 Downloading from: $PROXMOX_ISO_URL"
-    wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
+    wget --no-check-certificate "$PROXMOX_ISO_URL" -O "$ISO_FILE"
     if [[ $? -ne 0 ]]; then
         echo "❌ Failed to download ISO. Please check the URL and try again."
         exit 1
     fi
-    echo "✅ Download completed: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+    echo "✅ Download completed: $(ls -lh "$ISO_FILE")"
 fi
 
 # Mount ISO
@@ -85,27 +86,27 @@ echo "🔗 Mounting ISO..."
 mkdir -p "$MOUNT_DIR"
 
 # Check if we're in a container environment or if mounting fails
-if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null || ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR" 2>/dev/null; then
+if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null || ! mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
     echo "⚠️ Detected container environment. Using alternative extraction method..."
     
     # Use 7zip or other tools to extract ISO without mounting
     if command -v 7z &> /dev/null; then
         echo "📦 Using 7zip to extract ISO..."
-        7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+        7z x "$ISO_FILE" -o"$CUSTOM_ISO_DIR" -y
     elif command -v bsdtar &> /dev/null; then
         echo "📦 Using bsdtar to extract ISO..."
-        bsdtar -xf "proxmox-ve_${PROXMOX_VERSION}-1.iso" -C "$CUSTOM_ISO_DIR"
+        bsdtar -xf "$ISO_FILE" -C "$CUSTOM_ISO_DIR"
     else
         echo "📦 Installing extraction tools..."
         if command -v apt-get &> /dev/null; then
             apt-get update && apt-get install -y p7zip-full
-            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+            7z x "$ISO_FILE" -o"$CUSTOM_ISO_DIR" -y
         elif command -v yum &> /dev/null; then
             yum install -y p7zip
-            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+            7z x "$ISO_FILE" -o"$CUSTOM_ISO_DIR" -y
         elif command -v dnf &> /dev/null; then
             dnf install -y p7zip
-            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+            7z x "$ISO_FILE" -o"$CUSTOM_ISO_DIR" -y
         else
             echo "❌ No extraction tool available. Please install p7zip or bsdtar."
             exit 1
@@ -124,15 +125,11 @@ else
     rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
     
     # Unmount ISO
-    umount "$MOUNT_DIR"
+    umount "$MOUNT_DIR" 2>/dev/null || true
 fi
 
-# Extract ISO contents
-echo "📦 Extracting ISO contents..."
-rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
-
-# Unmount ISO
-umount "$MOUNT_DIR"
+# Continue with driver integration
+echo "🔄 Continuing with driver integration..."
 
 # Download Realtek R8168 driver
 echo "📥 Downloading Realtek R8168 driver..."
