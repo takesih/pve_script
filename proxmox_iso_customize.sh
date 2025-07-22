@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.13 - File replacement method (preserve original ISO)"
+echo "version 4.14 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -716,6 +716,7 @@ cp "$ISO_FILE" "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
 echo "📦 Replacing initrd.img in the original ISO..."
 xorriso -indev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
     -outdev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+    -boot_image any keep \
     -map "$CUSTOM_ISO_DIR/boot/initrd.img" "/boot/initrd.img" \
     -commit
 
