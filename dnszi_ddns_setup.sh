@@ -111,9 +111,9 @@ EOF
     echo "" >> "$CRON_FILE"
     echo "# DNSZI DDNS Auto Update" >> "$CRON_FILE"
     echo "# Update on boot" >> "$CRON_FILE"
-    echo "@reboot $DDNS_SCRIPT" >> "$CRON_FILE"
+    echo "@reboot root $DDNS_SCRIPT" >> "$CRON_FILE"
     echo "# Update every 3 hours" >> "$CRON_FILE"
-    echo "0 */3 * * * $DDNS_SCRIPT" >> "$CRON_FILE"
+    echo "0 */3 * * * root $DDNS_SCRIPT" >> "$CRON_FILE"
     
     # Restart cron service
     echo "🔄 Restarting cron service..."
@@ -152,6 +152,8 @@ elif [[ "$choice" == "2" ]]; then
         sed -i '/DNSZI DDNS Auto Update/d' "$CRON_FILE"
         sed -i '/Update on boot/d' "$CRON_FILE"
         sed -i '/Update every 3 hours/d' "$CRON_FILE"
+        # Remove empty lines that might be left
+        sed -i '/^$/d' "$CRON_FILE"
     else
         echo "ℹ️ No crontab entries found to remove."
     fi
