@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 PROXMOX_VERSION="8.4"
-PROXMOX_ISO_URL="https://download.proxmox.com/iso/proxmox-ve_${PROXMOX_VERSION}-1.iso"
+PROXMOX_ISO_URL="http://download.proxmox.com/iso/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 WORK_DIR="/tmp/proxmox_customize"
 MOUNT_DIR="/mnt/proxmox_iso"
 CUSTOM_ISO_DIR="/tmp/custom_iso"
