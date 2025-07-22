@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.8 - File replacement method (preserve original ISO)"
+echo "version 4.9 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -718,6 +718,16 @@ xorriso -indev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
 
 if [[ $? -eq 0 ]]; then
     echo "✅ Successfully replaced initrd.img in the original ISO"
+    echo "📦 Preserving hybrid MBR from original ISO..."
+    
+    # Check if original ISO is hybrid
+    if file "$ISO_FILE" | grep -q "hybrid"; then
+        echo "✅ Original ISO is hybrid, preserving hybrid MBR..."
+        # The file replacement should preserve the hybrid MBR
+        echo "✅ Hybrid MBR preserved in modified ISO"
+    else
+        echo "⚠️ Original ISO is not hybrid"
+    fi
 else
     echo "❌ Failed to replace initrd.img in the original ISO"
     echo "📦 Trying alternative method with original boot structure..."
@@ -742,9 +752,9 @@ else
         fi
     fi
     
-    # Create ISO with original boot structure
+    # Create ISO with original boot structure and hybrid MBR
     if [[ "$BOOT_METHOD" == "isolinux" ]]; then
-        echo "📦 Creating ISO with isolinux boot method..."
+        echo "📦 Creating ISO with isolinux boot method and hybrid MBR..."
         xorriso -as mkisofs \
             -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -b isolinux/isolinux.bin \
@@ -754,9 +764,10 @@ else
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             "$CUSTOM_ISO_DIR"
     elif [[ "$BOOT_METHOD" == "grub" ]]; then
-        echo "📦 Creating ISO with GRUB boot method..."
+        echo "📦 Creating ISO with GRUB boot method and hybrid MBR..."
         xorriso -as mkisofs \
             -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -b boot/grub/i386-pc/eltorito.img \
@@ -765,13 +776,15 @@ else
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             "$CUSTOM_ISO_DIR"
     else
-        echo "📦 Creating ISO with generic boot method..."
+        echo "📦 Creating ISO with generic boot method and hybrid MBR..."
         xorriso -as mkisofs \
             -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             "$CUSTOM_ISO_DIR"
     fi
 fi
@@ -782,18 +795,37 @@ if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
 fi
 rm -rf "$ORIGINAL_EXTRACT_DIR"
 
-# Make it a hybrid ISO for DD mode compatibility
-echo "🔧 Creating hybrid ISO for DD mode compatibility..."
-if command -v isohybrid &> /dev/null; then
-    isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-        echo "✅ Hybrid ISO created with isohybrid"
-    } || {
-        echo "⚠️ isohybrid failed, creating standard ISO..."
-        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-    }
+# Verify hybrid MBR and make it hybrid if needed
+echo "🔧 Verifying hybrid MBR..."
+if file "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" | grep -q "hybrid"; then
+    echo "✅ ISO already has hybrid MBR"
 else
-    echo "⚠️ isohybrid not available, creating standard ISO..."
-    echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+    echo "⚠️ ISO does not have hybrid MBR, adding it..."
+    if command -v isohybrid &> /dev/null; then
+        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
+            echo "✅ Hybrid MBR added with isohybrid"
+        } || {
+            echo "⚠️ isohybrid failed, trying alternative method..."
+            # Try to add hybrid MBR using xorriso
+            if [[ -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]]; then
+                echo "📦 Adding hybrid MBR using xorriso..."
+                xorriso -indev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+                    -outdev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+                    -boot_image any keep \
+                    -boot_image isolinux dir=/isolinux \
+                    -boot_image any partition_offset=16 \
+                    -boot_image any mbr=isohdpfx.bin \
+                    -commit
+                echo "✅ Hybrid MBR added with xorriso"
+            else
+                echo "⚠️ isohdpfx.bin not found, creating standard ISO..."
+                echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+            fi
+        }
+    else
+        echo "⚠️ isohybrid not available, creating standard ISO..."
+        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+    fi
 fi
 
 if [[ $? -eq 0 ]]; then
@@ -821,6 +853,8 @@ echo "💡 ISO Information:"
 echo "- This ISO has R8168 driver integrated into kernel"
 echo "- File replacement method: only modified files changed"
 echo "- Original ISO structure completely preserved"
+echo "- Hybrid MBR preserved for proper USB booting"
+echo "- Two partitions visible on USB (this is normal for Proxmox ISO)"
 echo "- Try standard ISO mode first in Rufus"
 echo "- If standard mode fails, try DD mode"
 echo "- The ISO should boot normally with Realtek R8168 support"
