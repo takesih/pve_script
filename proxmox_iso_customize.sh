@@ -51,16 +51,21 @@ mkdir -p "$WORK_DIR" "$MOUNT_DIR" "$CUSTOM_ISO_DIR"
 
 # Download Proxmox ISO
 echo "📥 Checking Proxmox ${PROXMOX_VERSION} ISO..."
+echo "🔍 Working directory: $WORK_DIR"
+echo "🔍 ISO file path: $WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 cd "$WORK_DIR"
 
 # Check if ISO already exists and has valid size (at least 1GB)
 ISO_FILE="$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
+echo "🔍 Checking for existing ISO: $ISO_FILE"
 if [[ -f "$ISO_FILE" ]]; then
+    echo "✅ ISO file found: $ISO_FILE"
     ISO_SIZE=$(stat -c%s "$ISO_FILE" 2>/dev/null || echo "0")
+    echo "📊 File size: $ISO_SIZE bytes ($((ISO_SIZE / 1024 / 1024)) MB)"
     if [[ $ISO_SIZE -gt 1000000000 ]]; then  # Greater than 1GB
         echo "ℹ️ ISO file already exists and appears complete."
         echo "📁 Using existing ISO: $(ls -lh "$ISO_FILE")"
-        echo "📊 File size: $((ISO_SIZE / 1024 / 1024)) MB"
+        echo "⏭️ Skipping download..."
     else
         echo "⚠️ Existing ISO file appears incomplete or corrupted."
         echo "📥 Re-downloading from: $PROXMOX_ISO_URL"
@@ -72,6 +77,7 @@ if [[ -f "$ISO_FILE" ]]; then
         echo "✅ Download completed: $(ls -lh "$ISO_FILE")"
     fi
 else
+    echo "❌ ISO file not found: $ISO_FILE"
     echo "📥 Downloading from: $PROXMOX_ISO_URL"
     wget --no-check-certificate "$PROXMOX_ISO_URL" -O "$ISO_FILE"
     if [[ $? -ne 0 ]]; then
@@ -136,39 +142,84 @@ echo "📥 Downloading Realtek R8168 driver..."
 cd "$CUSTOM_ISO_DIR"
 mkdir -p "drivers"
 
-# Download driver from kernel.org or alternative source
-DRIVER_URL="https://raw.githubusercontent.com/torvalds/linux/master/drivers/net/ethernet/realtek/r8168.c"
-wget --no-check-certificate "$DRIVER_URL" -O "drivers/r8168.c" || {
-    echo "⚠️ Could not download driver from kernel.org, using alternative method..."
-    # Alternative: Create a simple driver info file
-    cat > "drivers/r8168_info.txt" << 'EOF'
+# Create driver info file (kernel driver is already included in most Linux distributions)
+echo "📝 Creating R8168 driver information..."
+cat > "drivers/r8168_info.txt" << 'EOF'
 Realtek R8168 Network Driver
 This driver is included in the Linux kernel since version 2.6.24
 Module name: r8168
 To load: modprobe r8168
+To check if loaded: lsmod | grep r8168
+To install manually: apt-get install proxmox-default-headers r8168-dkms
+
+IMPORTANT NOTES:
+1. The r8169 driver may conflict with r8168
+2. Add non-free repository: deb http://deb.debian.org/debian bookworm main non-free
+3. Install packages: apt-get install proxmox-default-headers r8168-dkms
+4. Blacklist r8169: echo "blacklist r8169" >> /etc/modprobe.d/r8168.conf
+5. Reboot after installation
+
+Troubleshooting:
+- Check current driver: lspci -vs $(lspci | grep -i realtek | awk '{print $1}')
+- Unload r8169: modprobe -r r8169
+- Load r8168: modprobe r8168
 EOF
-}
 
 # Create driver installation script
 echo "📝 Creating driver installation script..."
 cat > "drivers/install_r8168.sh" << 'EOF'
 #!/bin/bash
 # Realtek R8168 Driver Installation Script
+# This script will be executed on target system with R8168 hardware
 
-echo "Installing Realtek R8168 driver..."
+echo "Realtek R8168 Driver Installation Script"
+echo "This script should be run on a system with R8168 hardware"
 
-# Check if driver is already loaded
-if lsmod | grep -q r8168; then
-    echo "Driver already loaded."
+# Check if we're on a system with R8168 hardware
+if ! lspci | grep -i realtek | grep -q "RTL8111\|RTL8168\|RTL8411"; then
+    echo "No Realtek R8168 hardware detected. Skipping driver installation."
     exit 0
 fi
 
-# Try to load the driver
+echo "Realtek R8168 hardware detected. Installing driver..."
+
+# Check if driver is already loaded
+if lsmod | grep -q r8168; then
+    echo "R8168 driver already loaded."
+    exit 0
+fi
+
+# Check current driver
+CURRENT_DRIVER=$(lspci -vs $(lspci | grep -i realtek | awk '{print $1}') 2>/dev/null | grep "Kernel driver in use" | awk '{print $4}')
+echo "Current driver: $CURRENT_DRIVER"
+
+# Try to load the r8168 driver
 if modprobe r8168; then
     echo "✅ R8168 driver loaded successfully"
+    # Blacklist r8169 to prevent conflicts
+    echo "blacklist r8169" >> /etc/modprobe.d/r8168.conf
+    echo "✅ Blacklisted r8169 driver to prevent conflicts"
 else
     echo "⚠️ Could not load R8168 driver automatically"
-    echo "You may need to install it manually after installation"
+    echo "Trying to install r8168-dkms package..."
+    
+    # Add non-free repository if not present
+    if ! grep -q "non-free" /etc/apt/sources.list; then
+        echo "Adding non-free repository..."
+        sed -i 's/deb http:\/\/deb.debian.org\/debian bookworm main/deb http:\/\/deb.debian.org\/debian bookworm main non-free/' /etc/apt/sources.list
+    fi
+    
+    # Install required packages
+    apt-get update
+    apt-get install -y proxmox-default-headers r8168-dkms
+    
+    # Try loading again
+    if modprobe r8168; then
+        echo "✅ R8168 driver installed and loaded successfully"
+    else
+        echo "⚠️ Manual installation required. Please run:"
+        echo "apt-get install -y proxmox-default-headers r8168-dkms"
+    fi
 fi
 EOF
 
@@ -181,26 +232,69 @@ mkdir -p "$INITRD_DIR"
 
 # Extract initrd
 cd "$CUSTOM_ISO_DIR"
-cp boot/initrd.img "$INITRD_DIR/"
-cd "$INITRD_DIR"
-gunzip -c initrd.img | cpio -idmv
-
-# Copy driver files to initrd
-cp -r "$CUSTOM_ISO_DIR/drivers" ./
-
-# Create driver loading script in initrd
-cat > "etc/rc.local" << 'EOF'
+if [[ -f "boot/initrd.img" ]]; then
+    echo "📦 Found initrd.img, attempting to extract..."
+    cp boot/initrd.img "$INITRD_DIR/"
+    cd "$INITRD_DIR"
+    
+    # Try different extraction methods
+    if file initrd.img | grep -q "gzip"; then
+        echo "📦 Extracting gzipped initrd..."
+        gunzip -c initrd.img | cpio -idmv 2>/dev/null || {
+            echo "⚠️ Standard extraction failed, trying alternative method..."
+            # Try with different options
+            gunzip -c initrd.img | cpio -idmv --no-absolute-filenames 2>/dev/null || {
+                echo "⚠️ Alternative extraction failed, creating minimal initrd..."
+                # Create minimal initrd structure
+                mkdir -p etc lib usr/bin
+                cat > "etc/rc.local" << 'EOF'
 #!/bin/bash
-# Load Realtek R8168 driver on boot
-if [ -f /drivers/install_r8168.sh ]; then
-    /drivers/install_r8168.sh
+# Load Realtek R8168 driver on boot (only if hardware is present)
+# Check if Realtek R8168 hardware is present
+if lspci | grep -i realtek | grep -q "RTL8111\|RTL8168\|RTL8411"; then
+    echo "Realtek R8168 hardware detected, loading driver..."
+    
+    # Check if r8169 is loaded and unload it
+    if lsmod | grep -q r8169; then
+        modprobe -r r8169 2>/dev/null
+    fi
+    
+    # Try to load r8168 driver
+    if modprobe r8168 2>/dev/null; then
+        echo "R8168 driver loaded successfully"
+    else
+        echo "R8168 driver not available, manual installation required"
+    fi
+else
+    echo "No Realtek R8168 hardware detected, skipping driver load"
 fi
 EOF
-
-chmod +x "etc/rc.local"
-
-# Repack initrd
-find . | cpio -o -H newc | gzip > "$CUSTOM_ISO_DIR/boot/initrd.img"
+                chmod +x "etc/rc.local"
+            }
+        }
+    else
+        echo "⚠️ initrd.img is not in gzip format, creating minimal structure..."
+        mkdir -p etc lib usr/bin
+        cat > "etc/rc.local" << 'EOF'
+#!/bin/bash
+# Load Realtek R8168 driver on boot
+modprobe r8168 2>/dev/null || echo "R8168 driver not available"
+EOF
+        chmod +x "etc/rc.local"
+    fi
+    
+    # Copy driver files to initrd
+    cp -r "$CUSTOM_ISO_DIR/drivers" ./ 2>/dev/null || true
+    
+    # Repack initrd
+    echo "📦 Repacking initrd..."
+    find . | cpio -o -H newc | gzip > "$CUSTOM_ISO_DIR/boot/initrd.img" 2>/dev/null || {
+        echo "⚠️ Failed to repack initrd, using original..."
+        cp "$INITRD_DIR/initrd.img" "$CUSTOM_ISO_DIR/boot/initrd.img"
+    }
+else
+    echo "⚠️ initrd.img not found, skipping initrd modification..."
+fi
 
 # Clean up
 rm -rf "$INITRD_DIR"
