@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.4 - HFS compatible with genisoimage"
+echo "version 4.5 - Original boot structure preservation"
 echo "=============================="
 
 # Check if running as root
@@ -103,7 +103,7 @@ MOUNT_SUCCESS=false
 if mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
     echo "📦 Using mount method to preserve original structure..."
     # Copy entire ISO structure exactly as it is (including HFS)
-    rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/"
+    rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
     MOUNT_SUCCESS=true
     echo "✅ ISO structure preserved using mount method"
 else
@@ -680,34 +680,18 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
         dd if=/dev/zero of=isolinux/boot.cat bs=1 count=2048 2>/dev/null || true
     fi
     
-    # Try genisoimage first for HFS support
-    if command -v genisoimage &> /dev/null; then
-        echo "📦 Using genisoimage for HFS compatible ISO..."
-        genisoimage -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b isolinux/isolinux.bin \
-            -c isolinux/boot.cat \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            -hfs \
-            -hfs-creator "prox" \
-            -hfs-type "prox" \
-            .
-    else
-        echo "📦 Using xorriso for standard ISO (HFS not supported)..."
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b isolinux/isolinux.bin \
-            -c isolinux/boot.cat \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
-    fi
+    # Use xorriso with exact original parameters to preserve boot structure
+    echo "📦 Using xorriso with original boot structure preservation..."
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -b isolinux/isolinux.bin \
+        -c isolinux/boot.cat \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
     
     # Make it a hybrid ISO (DD mode compatible)
     echo "🔧 Creating hybrid ISO for DD mode compatibility..."
@@ -749,31 +733,15 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
     fi
 elif [[ -d "boot/grub" ]]; then
     echo "📦 Using GRUB boot method with proper boot structure..."
-    if command -v genisoimage &> /dev/null; then
-        echo "📦 Using genisoimage for HFS compatible ISO..."
-        genisoimage -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b boot/grub/i386-pc/eltorito.img \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            -hfs \
-            -hfs-creator "prox" \
-            -hfs-type "prox" \
-            .
-    else
-        echo "📦 Using xorriso for standard ISO (HFS not supported)..."
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -b boot/grub/i386-pc/eltorito.img \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
-    fi
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -b boot/grub/i386-pc/eltorito.img \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
     
     # Make it a hybrid ISO
     echo "🔧 Creating hybrid ISO for DD mode compatibility..."
@@ -790,23 +758,11 @@ elif [[ -d "boot/grub" ]]; then
     fi
 else
     echo "📦 Using generic ISO creation with proper boot structure..."
-    if command -v genisoimage &> /dev/null; then
-        echo "📦 Using genisoimage for HFS compatible ISO..."
-        genisoimage -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            -hfs \
-            -hfs-creator "prox" \
-            -hfs-type "prox" \
-            .
-    else
-        echo "📦 Using xorriso for standard ISO (HFS not supported)..."
-        xorriso -as mkisofs \
-            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-            -r -V "PROXMOX_8_4" \
-            -joliet-long \
-            .
-    fi
+    xorriso -as mkisofs \
+        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+        -r -V "PROXMOX_8_4" \
+        -joliet-long \
+        .
     
     # Try to make it hybrid if possible
     echo "🔧 Creating hybrid ISO for DD mode compatibility..."
@@ -838,9 +794,6 @@ else
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
-            -hfs \
-            -hfs-creator "prox" \
-            -hfs-type "prox" \
             .
     else
         echo "❌ Failed to create ISO. Trying without isolinux..."
@@ -876,7 +829,7 @@ echo "- Kernel-level driver integration (no post-installation required)"
 echo ""
 echo "💡 ISO Information:"
 echo "- This ISO has R8168 driver integrated into kernel"
-echo "- HFS compatibility preserved (UltraISO compatible)"
+echo "- Original boot structure preserved (no file name changes)"
 echo "- Original ISO structure preserved with driver integration"
 echo "- Try standard ISO mode first in Rufus"
 echo "- If standard mode fails, try DD mode"
