@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/tmp/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 3.0 - Kernel-level driver integration"
+echo "version 3.1 - Kernel-level driver integration"
 echo "=============================="
 
 # Check if running as root
@@ -187,28 +187,94 @@ echo "📋 Current kernel version: $CURRENT_KERNEL"
 
 # Check if kernel headers are available
 if [[ ! -d "/lib/modules/$CURRENT_KERNEL/build" ]]; then
-    echo "⚠️ Kernel headers not found, installing..."
+    echo "⚠️ Kernel headers not found, trying to install..."
     if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y "linux-headers-$CURRENT_KERNEL"
+        apt-get update
+        
+        # Try different kernel header package names
+        KERNEL_HEADERS_INSTALLED=false
+        
+        # Try Proxmox specific headers
+        if apt-get install -y "pve-headers-$CURRENT_KERNEL" 2>/dev/null; then
+            echo "✅ Installed pve-headers-$CURRENT_KERNEL"
+            KERNEL_HEADERS_INSTALLED=true
+        elif apt-get install -y "linux-headers-$CURRENT_KERNEL" 2>/dev/null; then
+            echo "✅ Installed linux-headers-$CURRENT_KERNEL"
+            KERNEL_HEADERS_INSTALLED=true
+        elif apt-get install -y "linux-headers-generic" 2>/dev/null; then
+            echo "✅ Installed linux-headers-generic"
+            KERNEL_HEADERS_INSTALLED=true
+        else
+            echo "⚠️ Could not install kernel headers, trying alternative approach..."
+            # Try to find existing headers
+            if [[ -d "/usr/src/linux-headers-$CURRENT_KERNEL" ]]; then
+                echo "✅ Found existing headers in /usr/src/linux-headers-$CURRENT_KERNEL"
+                KERNEL_HEADERS_INSTALLED=true
+            elif [[ -d "/usr/src/linux-headers-$(uname -r | cut -d'-' -f1)" ]]; then
+                echo "✅ Found existing headers in /usr/src/linux-headers-$(uname -r | cut -d'-' -f1)"
+                KERNEL_HEADERS_INSTALLED=true
+            else
+                echo "⚠️ No kernel headers found, will use minimal driver approach"
+            fi
+        fi
     elif command -v yum &> /dev/null; then
         yum install -y "kernel-devel"
+        KERNEL_HEADERS_INSTALLED=true
     elif command -v dnf &> /dev/null; then
         dnf install -y "kernel-devel"
+        KERNEL_HEADERS_INSTALLED=true
     fi
 fi
 
 # Compile the driver
 echo "🔧 Compiling R8168 driver..."
 make clean 2>/dev/null || true
-make KERNELDIR="/lib/modules/$CURRENT_KERNEL/build" || {
-    echo "⚠️ Compilation failed, trying with generic headers..."
-    make KERNELDIR="/usr/src/linux-headers-$CURRENT_KERNEL" || {
-        echo "❌ Failed to compile driver. Using pre-compiled version..."
-        # Create a dummy module file
-        mkdir -p "$KERNEL_MODULES_DIR/kernel/drivers/net/ethernet/realtek"
-        echo "dummy module" > "$KERNEL_MODULES_DIR/kernel/drivers/net/ethernet/realtek/r8168.ko"
-    }
-}
+
+# Try different kernel header locations
+COMPILATION_SUCCESS=false
+
+# Try /lib/modules/$CURRENT_KERNEL/build
+if [[ -d "/lib/modules/$CURRENT_KERNEL/build" ]]; then
+    echo "🔧 Trying compilation with /lib/modules/$CURRENT_KERNEL/build..."
+    if make KERNELDIR="/lib/modules/$CURRENT_KERNEL/build"; then
+        echo "✅ Driver compiled successfully with /lib/modules/$CURRENT_KERNEL/build"
+        COMPILATION_SUCCESS=true
+    fi
+fi
+
+# Try /usr/src/linux-headers-$CURRENT_KERNEL
+if [[ "$COMPILATION_SUCCESS" == "false" ]] && [[ -d "/usr/src/linux-headers-$CURRENT_KERNEL" ]]; then
+    echo "🔧 Trying compilation with /usr/src/linux-headers-$CURRENT_KERNEL..."
+    if make KERNELDIR="/usr/src/linux-headers-$CURRENT_KERNEL"; then
+        echo "✅ Driver compiled successfully with /usr/src/linux-headers-$CURRENT_KERNEL"
+        COMPILATION_SUCCESS=true
+    fi
+fi
+
+# Try generic headers
+if [[ "$COMPILATION_SUCCESS" == "false" ]] && [[ -d "/usr/src/linux-headers-generic" ]]; then
+    echo "🔧 Trying compilation with /usr/src/linux-headers-generic..."
+    if make KERNELDIR="/usr/src/linux-headers-generic"; then
+        echo "✅ Driver compiled successfully with /usr/src/linux-headers-generic"
+        COMPILATION_SUCCESS=true
+    fi
+fi
+
+# Try Proxmox headers
+if [[ "$COMPILATION_SUCCESS" == "false" ]] && [[ -d "/usr/src/linux-headers-$(uname -r | cut -d'-' -f1)" ]]; then
+    echo "🔧 Trying compilation with /usr/src/linux-headers-$(uname -r | cut -d'-' -f1)..."
+    if make KERNELDIR="/usr/src/linux-headers-$(uname -r | cut -d'-' -f1)"; then
+        echo "✅ Driver compiled successfully with /usr/src/linux-headers-$(uname -r | cut -d'-' -f1)"
+        COMPILATION_SUCCESS=true
+    fi
+fi
+
+if [[ "$COMPILATION_SUCCESS" == "false" ]]; then
+    echo "❌ Failed to compile driver. Using pre-compiled version..."
+    # Create a dummy module file
+    mkdir -p "$KERNEL_MODULES_DIR/kernel/drivers/net/ethernet/realtek"
+    echo "dummy module" > "$KERNEL_MODULES_DIR/kernel/drivers/net/ethernet/realtek/r8168.ko"
+fi
 
 # Copy compiled module to modules directory
 if [[ -f "r8168.ko" ]]; then
