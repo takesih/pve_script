@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.0 - Hybrid ISO creation"
+echo "version 4.1 - Hybrid ISO creation"
 echo "=============================="
 
 # Check if running as root
@@ -685,8 +685,46 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
     # Make it a hybrid ISO (DD mode compatible)
     if command -v isohybrid &> /dev/null; then
         echo "🔧 Converting to hybrid ISO for DD mode compatibility..."
-        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
-        echo "✅ Hybrid ISO created - DD mode compatible"
+        
+        # First, try to get a proper isolinux.bin that supports hybrid booting
+        if [[ ! -f "/usr/lib/ISOLINUX/isolinux.bin" ]] || [[ ! -f "isolinux/isolinux.bin" ]]; then
+            echo "📦 Installing proper isolinux for hybrid booting..."
+            if command -v apt-get &> /dev/null; then
+                apt-get update && apt-get install -y syslinux isolinux
+            fi
+        fi
+        
+        # Copy proper isolinux.bin if available
+        if [[ -f "/usr/lib/ISOLINUX/isolinux.bin" ]]; then
+            echo "📦 Copying proper isolinux.bin for hybrid booting..."
+            cp /usr/lib/ISOLINUX/isolinux.bin isolinux/isolinux.bin
+        fi
+        
+        # Try isohybrid conversion
+        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
+            echo "✅ Hybrid ISO created - DD mode compatible"
+        } || {
+            echo "⚠️ isohybrid failed, trying alternative method..."
+            # Alternative: use xorriso to make hybrid
+            if [[ -f "/usr/lib/ISOLINUX/isohdpfx.bin" ]]; then
+                echo "🔧 Using xorriso with hybrid MBR..."
+                xorriso -as mkisofs \
+                    -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+                    -b isolinux/isolinux.bin \
+                    -c isolinux/boot.cat \
+                    -no-emul-boot \
+                    -boot-load-size 4 \
+                    -boot-info-table \
+                    -r -V "PROXMOX_8_4" \
+                    -joliet-long \
+                    -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+                    .
+                echo "✅ Hybrid ISO created with xorriso"
+            else
+                echo "⚠️ Hybrid MBR not available, creating standard ISO..."
+                echo "💡 Note: This ISO may not require DD mode in Rufus"
+            fi
+        }
     else
         echo "⚠️ isohybrid not available, installing..."
         if command -v apt-get &> /dev/null; then
@@ -697,19 +735,8 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
             dnf install -y syslinux
         fi
         isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null || {
-            echo "⚠️ isohybrid failed, trying alternative method..."
-            # Alternative: use xorriso to make hybrid
-            xorriso -as mkisofs \
-                -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
-                -b isolinux/isolinux.bin \
-                -c isolinux/boot.cat \
-                -no-emul-boot \
-                -boot-load-size 4 \
-                -boot-info-table \
-                -r -V "PROXMOX_8_4" \
-                -joliet-long \
-                -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-                .
+            echo "⚠️ isohybrid still failed, creating standard ISO..."
+            echo "💡 Note: This ISO may not require DD mode in Rufus"
         }
     fi
 elif [[ -d "boot/grub" ]]; then
@@ -798,6 +825,7 @@ echo "💡 ISO Information:"
 echo "- This ISO is now hybrid and DD mode compatible"
 echo "- Use DD mode in Rufus for proper booting"
 echo "- Original ISO structure preserved with driver integration"
+echo "- If DD mode is not required, use standard ISO mode in Rufus"
 echo ""
 
 # Setup web server for download
