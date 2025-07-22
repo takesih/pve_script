@@ -29,6 +29,20 @@ local-lvm을 local에 통합하여 디스크 공간을 최적화하는 스크립
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_resize.sh)"
 ```
 
+### 3. DNSZI DDNS 자동 업데이트 도구
+DNSZI 서비스를 위한 DDNS 자동 업데이트를 설정하는 스크립트입니다.
+
+**기능:**
+- **자동 설치**: cron 서비스 자동 설치 및 설정
+- **부팅 시 업데이트**: 시스템 부팅 시 자동 DDNS 업데이트
+- **정기 업데이트**: 3시간마다 자동 DDNS 업데이트
+- **간편 제거**: 설정 완전 제거 기능
+
+**실행 방법:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
+```
+
 
 
  
