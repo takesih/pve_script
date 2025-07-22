@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.11 - File replacement method (preserve original ISO)"
+echo "version 4.12 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -721,13 +721,23 @@ if [[ $? -eq 0 ]]; then
     echo "📦 Preserving hybrid MBR from original ISO..."
     
     # Check if original ISO is hybrid
-    if file "$ISO_FILE" | grep -q "hybrid"; then
-        echo "✅ Original ISO is hybrid, preserving hybrid MBR..."
-        # The file replacement should preserve the hybrid MBR
-        echo "✅ Hybrid MBR preserved in modified ISO"
+echo "📋 Original ISO analysis:"
+file "$ISO_FILE"
+echo ""
+
+if file "$ISO_FILE" | grep -q "hybrid\|Hybrid"; then
+    echo "✅ Original ISO is hybrid, preserving hybrid MBR..."
+    # The file replacement should preserve the hybrid MBR
+    echo "✅ Hybrid MBR preserved in modified ISO"
+else
+    echo "⚠️ Original ISO is not detected as hybrid"
+    echo "📦 Checking if it's actually a bootable ISO..."
+    if file "$ISO_FILE" | grep -q "bootable\|Bootable"; then
+        echo "✅ Original ISO is bootable, preserving boot structure..."
     else
-        echo "⚠️ Original ISO is not hybrid"
+        echo "⚠️ Original ISO boot status unclear"
     fi
+fi
 else
     echo "❌ Failed to replace initrd.img in the original ISO"
     echo "📦 Trying alternative method with original boot structure..."
@@ -797,53 +807,17 @@ rm -rf "$ORIGINAL_EXTRACT_DIR"
 
 # Verify hybrid MBR and make it hybrid if needed
 echo "🔧 Verifying hybrid MBR..."
-if file "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" | grep -q "hybrid"; then
+echo "📋 Modified ISO analysis:"
+file "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
+echo ""
+
+if file "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" | grep -q "hybrid\|Hybrid"; then
     echo "✅ ISO already has hybrid MBR"
 else
-    echo "⚠️ ISO does not have hybrid MBR, adding it..."
-    if command -v isohybrid &> /dev/null; then
-        isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-            echo "✅ Hybrid MBR added with isohybrid"
-        } || {
-            echo "⚠️ isohybrid failed, trying alternative method..."
-            # Use isohybrid to add hybrid MBR
-            if command -v isohybrid &> /dev/null; then
-                echo "📦 Adding hybrid MBR using isohybrid..."
-                isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
-                    echo "✅ Hybrid MBR added with isohybrid"
-                } || {
-                    echo "⚠️ isohybrid failed, trying alternative method..."
-                    # Try using xorriso with mkisofs compatibility
-                    echo "📦 Adding hybrid MBR using xorriso mkisofs mode..."
-                    xorriso -as mkisofs \
-                        -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168-temp.iso" \
-                        -b isolinux/isolinux.bin \
-                        -c isolinux/boot.cat \
-                        -no-emul-boot \
-                        -boot-load-size 4 \
-                        -boot-info-table \
-                        -r -V "PROXMOX_8_4" \
-                        -joliet-long \
-                        -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-                        "$CUSTOM_ISO_DIR"
-                    
-                    if [[ $? -eq 0 ]]; then
-                        mv "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168-temp.iso" "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso"
-                        echo "✅ Hybrid MBR added with xorriso mkisofs mode"
-                    else
-                        echo "⚠️ All hybrid MBR methods failed, creating standard ISO..."
-                        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-                    fi
-                }
-            else
-                echo "⚠️ isohybrid not available, creating standard ISO..."
-                echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-            fi
-        }
-    else
-        echo "⚠️ isohybrid not available, creating standard ISO..."
-        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
-    fi
+    echo "⚠️ ISO does not have hybrid MBR, but original was bootable"
+    echo "📦 Preserving original boot structure without forcing hybrid..."
+    echo "💡 The ISO should work with standard ISO mode in Rufus"
+    echo "💡 If booting fails, try DD mode in Rufus"
 fi
 
 if [[ $? -eq 0 ]]; then
