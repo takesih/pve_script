@@ -10,16 +10,16 @@ set -e
 # Configuration
 PROXMOX_VERSION="8.4"
 PROXMOX_ISO_URL="https://enterprise.proxmox.com/iso/proxmox-ve_${PROXMOX_VERSION}-1.iso"
-WORK_DIR="/tmp/proxmox_customize"
-MOUNT_DIR="/mnt/proxmox_iso"
-CUSTOM_ISO_DIR="/tmp/custom_iso"
-DRIVER_DIR="/tmp/r8168_driver"
-KERNEL_MODULES_DIR="/tmp/kernel_modules"
+WORK_DIR="/usr/proxmox_customize"
+MOUNT_DIR="/usr/proxmox_iso"
+CUSTOM_ISO_DIR="/usr/custom_iso"
+DRIVER_DIR="/usr/r8168_driver"
+KERNEL_MODULES_DIR="/usr/kernel_modules"
 
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 3.3 - Kernel-level driver integration"
+echo "version 3.5 - Kernel-level driver integration"
 echo "=============================="
 
 # Check if running as root
@@ -61,7 +61,7 @@ echo "🔍 ISO file path: $WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 cd "$WORK_DIR"
 
 # Check if ISO already exists and has valid size (at least 1GB)
-ISO_FILE="$PROXMOX_ISO_URL/proxmox-ve_${PROXMOX_VERSION}-1.iso"
+ISO_FILE="$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 echo "🔍 Checking for existing ISO: $ISO_FILE"
 if [[ -f "$ISO_FILE" ]]; then
     echo "✅ ISO file found: $ISO_FILE"
@@ -471,7 +471,7 @@ EOF
 
 # Modify initrd to include kernel modules
 echo "🔧 Modifying initrd to include kernel modules..."
-INITRD_DIR="/tmp/initrd_extract"
+INITRD_DIR="/usr/initrd_extract"
 mkdir -p "$INITRD_DIR"
 
 # Extract initrd
