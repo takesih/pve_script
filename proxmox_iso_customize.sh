@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.12 - File replacement method (preserve original ISO)"
+echo "version 4.13 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -664,14 +664,17 @@ echo "📦 Extracting original ISO for boot structure analysis..."
 ORIGINAL_EXTRACT_DIR="/usr/original_iso_extract"
 mkdir -p "$ORIGINAL_EXTRACT_DIR"
 
+# Try to mount first for best preservation
 if mount -o loop "$ISO_FILE" "$ORIGINAL_EXTRACT_DIR" 2>/dev/null; then
     echo "✅ Original ISO mounted successfully"
     ORIGINAL_MOUNTED=true
 else
     echo "⚠️ Mount failed, using extraction tools..."
     if command -v 7z &> /dev/null; then
+        echo "📦 Using 7zip to extract original ISO..."
         7z x "$ISO_FILE" -o"$ORIGINAL_EXTRACT_DIR" -y
     elif command -v bsdtar &> /dev/null; then
+        echo "📦 Using bsdtar to extract original ISO..."
         bsdtar -xf "$ISO_FILE" -C "$ORIGINAL_EXTRACT_DIR"
     else
         echo "❌ No extraction tool available"
@@ -721,23 +724,23 @@ if [[ $? -eq 0 ]]; then
     echo "📦 Preserving hybrid MBR from original ISO..."
     
     # Check if original ISO is hybrid
-echo "📋 Original ISO analysis:"
-file "$ISO_FILE"
-echo ""
-
-if file "$ISO_FILE" | grep -q "hybrid\|Hybrid"; then
-    echo "✅ Original ISO is hybrid, preserving hybrid MBR..."
-    # The file replacement should preserve the hybrid MBR
-    echo "✅ Hybrid MBR preserved in modified ISO"
-else
-    echo "⚠️ Original ISO is not detected as hybrid"
-    echo "📦 Checking if it's actually a bootable ISO..."
-    if file "$ISO_FILE" | grep -q "bootable\|Bootable"; then
-        echo "✅ Original ISO is bootable, preserving boot structure..."
+    echo "📋 Original ISO analysis:"
+    file "$ISO_FILE"
+    echo ""
+    
+    if file "$ISO_FILE" | grep -q "hybrid\|Hybrid"; then
+        echo "✅ Original ISO is hybrid, preserving hybrid MBR..."
+        # The file replacement should preserve the hybrid MBR
+        echo "✅ Hybrid MBR preserved in modified ISO"
     else
-        echo "⚠️ Original ISO boot status unclear"
+        echo "⚠️ Original ISO is not detected as hybrid"
+        echo "📦 Checking if it's actually a bootable ISO..."
+        if file "$ISO_FILE" | grep -q "bootable\|Bootable"; then
+            echo "✅ Original ISO is bootable, preserving boot structure..."
+        else
+            echo "⚠️ Original ISO boot status unclear"
+        fi
     fi
-fi
 else
     echo "❌ Failed to replace initrd.img in the original ISO"
     echo "📦 Trying alternative method with original boot structure..."
@@ -750,16 +753,45 @@ else
     if [[ "$ORIGINAL_MOUNTED" == "true" ]]; then
         rsync -av "$ORIGINAL_EXTRACT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=".Trashes" --exclude=".fseventsd"
     else
-        # Copy specific boot files
+        # Copy specific boot files with better preservation
+        echo "📦 Copying boot files from extracted original ISO..."
+        
+        # Copy isolinux files
         if [[ -f "$ORIGINAL_EXTRACT_DIR/isolinux/isolinux.bin" ]]; then
+            echo "📦 Copying isolinux files..."
             cp -r "$ORIGINAL_EXTRACT_DIR/isolinux/" "$CUSTOM_ISO_DIR/isolinux/"
         fi
+        
+        # Copy GRUB files
         if [[ -d "$ORIGINAL_EXTRACT_DIR/boot/grub" ]]; then
+            echo "📦 Copying GRUB files..."
             cp -r "$ORIGINAL_EXTRACT_DIR/boot/grub/" "$CUSTOM_ISO_DIR/boot/grub/"
         fi
+        
+        # Copy EFI files
         if [[ -d "$ORIGINAL_EXTRACT_DIR/EFI" ]]; then
+            echo "📦 Copying EFI files..."
             cp -r "$ORIGINAL_EXTRACT_DIR/EFI/" "$CUSTOM_ISO_DIR/EFI/"
         fi
+        
+        # Copy other boot-related files
+        if [[ -f "$ORIGINAL_EXTRACT_DIR/boot/grub/grub.cfg" ]]; then
+            echo "📦 Copying GRUB configuration..."
+            cp "$ORIGINAL_EXTRACT_DIR/boot/grub/grub.cfg" "$CUSTOM_ISO_DIR/boot/grub/grub.cfg"
+        fi
+        
+        if [[ -f "$ORIGINAL_EXTRACT_DIR/boot/grub/loopback.cfg" ]]; then
+            echo "📦 Copying loopback configuration..."
+            cp "$ORIGINAL_EXTRACT_DIR/boot/grub/loopback.cfg" "$CUSTOM_ISO_DIR/boot/grub/loopback.cfg"
+        fi
+        
+        # Copy any other important boot files
+        for file in "$ORIGINAL_EXTRACT_DIR"/boot/*; do
+            if [[ -f "$file" ]] && [[ ! -f "$CUSTOM_ISO_DIR/boot/$(basename "$file")" ]]; then
+                echo "📦 Copying boot file: $(basename "$file")"
+                cp "$file" "$CUSTOM_ISO_DIR/boot/"
+            fi
+        done
     fi
     
     # Create ISO with original boot structure and hybrid MBR
