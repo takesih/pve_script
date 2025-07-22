@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.9 - File replacement method (preserve original ISO)"
+echo "version 4.10 - File replacement method (preserve original ISO)"
 echo "=============================="
 
 # Check if running as root
@@ -812,14 +812,24 @@ else
                 xorriso -indev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
                     -outdev "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
                     -boot_image any keep \
-                    -boot_image isolinux dir=/isolinux \
-                    -boot_image any partition_offset=16 \
                     -boot_image any mbr=isohdpfx.bin \
                     -commit
                 echo "✅ Hybrid MBR added with xorriso"
             else
-                echo "⚠️ isohdpfx.bin not found, creating standard ISO..."
-                echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+                echo "⚠️ isohdpfx.bin not found, trying alternative method..."
+                # Try using isohybrid directly
+                if command -v isohybrid &> /dev/null; then
+                    echo "📦 Adding hybrid MBR using isohybrid..."
+                    isohybrid "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" 2>/dev/null && {
+                        echo "✅ Hybrid MBR added with isohybrid"
+                    } || {
+                        echo "⚠️ isohybrid failed, creating standard ISO..."
+                        echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+                    }
+                else
+                    echo "⚠️ No hybrid MBR tools available, creating standard ISO..."
+                    echo "💡 Note: This ISO may work with standard ISO mode in Rufus"
+                fi
             fi
         }
     else
