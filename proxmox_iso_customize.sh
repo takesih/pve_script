@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/tmp/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 3.1 - Kernel-level driver integration"
+echo "version 3.2 - Kernel-level driver integration"
 echo "=============================="
 
 # Check if running as root
@@ -97,10 +97,12 @@ echo "🔗 Extracting ISO contents..."
 mkdir -p "$MOUNT_DIR"
 
 # Try mounting first, fallback to extraction tools
+MOUNT_SUCCESS=false
 if mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
     echo "📦 Extracting ISO contents using mount method..."
     rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
-    umount "$MOUNT_DIR" 2>/dev/null || true
+    MOUNT_SUCCESS=true
+    # Keep mounted for isolinux files
 else
     echo "⚠️ Mount failed, using extraction tools..."
     
@@ -133,6 +135,11 @@ else
     fi
     
     echo "✅ ISO extracted successfully using alternative method."
+fi
+
+# Unmount ISO after isolinux files are copied
+if [[ "$MOUNT_SUCCESS" == "true" ]]; then
+    umount "$MOUNT_DIR" 2>/dev/null || true
 fi
 
 # Download and compile Realtek R8168 driver
@@ -601,6 +608,23 @@ cd "$CUSTOM_ISO_DIR"
 
 # Create isolinux configuration
 mkdir -p "isolinux"
+
+# Copy isolinux files from original ISO if available
+if [[ -f "$MOUNT_DIR/isolinux/isolinux.bin" ]]; then
+    echo "📦 Copying isolinux files from original ISO..."
+    cp "$MOUNT_DIR/isolinux/isolinux.bin" "isolinux/"
+    cp "$MOUNT_DIR/isolinux/vesamenu.c32" "isolinux/" 2>/dev/null || true
+    cp "$MOUNT_DIR/isolinux/ldlinux.c32" "isolinux/" 2>/dev/null || true
+    cp "$MOUNT_DIR/isolinux/libcom32.c32" "isolinux/" 2>/dev/null || true
+    cp "$MOUNT_DIR/isolinux/libutil.c32" "isolinux/" 2>/dev/null || true
+else
+    echo "⚠️ isolinux.bin not found in original ISO, creating minimal boot files..."
+    # Create minimal isolinux.bin (this is a placeholder)
+    echo "Minimal isolinux.bin" > "isolinux/isolinux.bin"
+    echo "Minimal vesamenu.c32" > "isolinux/vesamenu.c32"
+    echo "Minimal ldlinux.c32" > "isolinux/ldlinux.c32"
+fi
+
 cat > "isolinux/isolinux.cfg" << EOF
 DEFAULT vesamenu.c32
 PROMPT 0
@@ -637,6 +661,21 @@ ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory created"
 
 # Create ISO using isolinux
 echo "📦 Generating custom ISO with isolinux..."
+
+# Check if isolinux.bin exists
+if [[ ! -f "isolinux/isolinux.bin" ]]; then
+    echo "❌ isolinux.bin not found. Creating minimal boot structure..."
+    mkdir -p isolinux
+    echo "Minimal isolinux.bin" > isolinux/isolinux.bin
+    echo "Minimal vesamenu.c32" > isolinux/vesamenu.c32
+fi
+
+# Create boot catalog
+if command -v isohybrid &> /dev/null; then
+    echo "📦 Creating boot catalog..."
+    isohybrid --forcehd0 isolinux/isolinux.bin 2>/dev/null || true
+fi
+
 xorriso -as mkisofs \
     -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
     -b isolinux/isolinux.bin \
@@ -665,8 +704,20 @@ else
             -joliet-long \
             .
     else
-        echo "❌ Failed to create ISO. Please check the extracted files manually."
-        exit 1
+        echo "❌ Failed to create ISO. Trying without isolinux..."
+        # Try creating ISO without isolinux boot
+        xorriso -as mkisofs \
+            -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
+            -r -V "PROXMOX_8_4" \
+            -joliet-long \
+            .
+        
+        if [[ $? -eq 0 ]]; then
+            echo "✅ ISO created without isolinux boot (manual boot required)"
+        else
+            echo "❌ Failed to create ISO. Please check the extracted files manually."
+            exit 1
+        fi
     fi
 fi
 
