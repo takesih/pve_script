@@ -50,11 +50,26 @@ rm -rf "$WORK_DIR" "$MOUNT_DIR" "$CUSTOM_ISO_DIR"
 mkdir -p "$WORK_DIR" "$MOUNT_DIR" "$CUSTOM_ISO_DIR"
 
 # Download Proxmox ISO
-echo "📥 Downloading Proxmox ${PROXMOX_VERSION} ISO..."
+echo "📥 Checking Proxmox ${PROXMOX_VERSION} ISO..."
 cd "$WORK_DIR"
+
+# Check if ISO already exists and has valid size (at least 1GB)
 if [[ -f "proxmox-ve_${PROXMOX_VERSION}-1.iso" ]]; then
-    echo "ℹ️ ISO file already exists, skipping download."
-    echo "📁 Using existing ISO: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+    ISO_SIZE=$(stat -c%s "proxmox-ve_${PROXMOX_VERSION}-1.iso" 2>/dev/null || echo "0")
+    if [[ $ISO_SIZE -gt 1000000000 ]]; then  # Greater than 1GB
+        echo "ℹ️ ISO file already exists and appears complete."
+        echo "📁 Using existing ISO: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+        echo "📊 File size: $((ISO_SIZE / 1024 / 1024)) MB"
+    else
+        echo "⚠️ Existing ISO file appears incomplete or corrupted."
+        echo "📥 Re-downloading from: $PROXMOX_ISO_URL"
+        wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
+        if [[ $? -ne 0 ]]; then
+            echo "❌ Failed to download ISO. Please check the URL and try again."
+            exit 1
+        fi
+        echo "✅ Download completed: $(ls -lh proxmox-ve_${PROXMOX_VERSION}-1.iso)"
+    fi
 else
     echo "📥 Downloading from: $PROXMOX_ISO_URL"
     wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
@@ -69,8 +84,8 @@ fi
 echo "🔗 Mounting ISO..."
 mkdir -p "$MOUNT_DIR"
 
-# Check if we're in a container environment
-if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null; then
+# Check if we're in a container environment or if mounting fails
+if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null || ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR" 2>/dev/null; then
     echo "⚠️ Detected container environment. Using alternative extraction method..."
     
     # Use 7zip or other tools to extract ISO without mounting
@@ -105,17 +120,7 @@ if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null; the
     echo "✅ ISO extracted successfully using alternative method."
 else
     # Try normal mounting
-    if ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
-        echo "❌ Failed to mount ISO. Trying alternative method..."
-        # Try with different mount options
-        if ! mount -o loop,ro "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
-            echo "❌ Failed to mount ISO. Please check if the ISO file is valid."
-            exit 1
-        fi
-    fi
-    
-    # Extract ISO contents
-    echo "📦 Extracting ISO contents..."
+    echo "📦 Extracting ISO contents using mount method..."
     rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
     
     # Unmount ISO
