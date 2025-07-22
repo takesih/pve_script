@@ -68,13 +68,58 @@ fi
 # Mount ISO
 echo "🔗 Mounting ISO..."
 mkdir -p "$MOUNT_DIR"
-if ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
-    echo "❌ Failed to mount ISO. Trying alternative method..."
-    # Try with different mount options
-    if ! mount -o loop,ro "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
-        echo "❌ Failed to mount ISO. Please check if the ISO file is valid."
+
+# Check if we're in a container environment
+if [[ -f /.dockerenv ]] || grep -q 'lxc\|docker' /proc/1/cgroup 2>/dev/null; then
+    echo "⚠️ Detected container environment. Using alternative extraction method..."
+    
+    # Use 7zip or other tools to extract ISO without mounting
+    if command -v 7z &> /dev/null; then
+        echo "📦 Using 7zip to extract ISO..."
+        7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+    elif command -v bsdtar &> /dev/null; then
+        echo "📦 Using bsdtar to extract ISO..."
+        bsdtar -xf "proxmox-ve_${PROXMOX_VERSION}-1.iso" -C "$CUSTOM_ISO_DIR"
+    else
+        echo "📦 Installing extraction tools..."
+        if command -v apt-get &> /dev/null; then
+            apt-get update && apt-get install -y p7zip-full
+            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+        elif command -v yum &> /dev/null; then
+            yum install -y p7zip
+            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+        elif command -v dnf &> /dev/null; then
+            dnf install -y p7zip
+            7z x "proxmox-ve_${PROXMOX_VERSION}-1.iso" -o"$CUSTOM_ISO_DIR" -y
+        else
+            echo "❌ No extraction tool available. Please install p7zip or bsdtar."
+            exit 1
+        fi
+    fi
+    
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Failed to extract ISO. Please check if the ISO file is valid."
         exit 1
     fi
+    
+    echo "✅ ISO extracted successfully using alternative method."
+else
+    # Try normal mounting
+    if ! mount -o loop "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
+        echo "❌ Failed to mount ISO. Trying alternative method..."
+        # Try with different mount options
+        if ! mount -o loop,ro "proxmox-ve_${PROXMOX_VERSION}-1.iso" "$MOUNT_DIR"; then
+            echo "❌ Failed to mount ISO. Please check if the ISO file is valid."
+            exit 1
+        fi
+    fi
+    
+    # Extract ISO contents
+    echo "📦 Extracting ISO contents..."
+    rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
+    
+    # Unmount ISO
+    umount "$MOUNT_DIR"
 fi
 
 # Extract ISO contents
