@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/tmp/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 3.2 - Kernel-level driver integration"
+echo "version 3.3 - Kernel-level driver integration"
 echo "=============================="
 
 # Check if running as root
@@ -61,7 +61,7 @@ echo "🔍 ISO file path: $WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 cd "$WORK_DIR"
 
 # Check if ISO already exists and has valid size (at least 1GB)
-ISO_FILE="$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1.iso"
+ISO_FILE="$PROXMOX_ISO_URL/proxmox-ve_${PROXMOX_VERSION}-1.iso"
 echo "🔍 Checking for existing ISO: $ISO_FILE"
 if [[ -f "$ISO_FILE" ]]; then
     echo "✅ ISO file found: $ISO_FILE"
@@ -610,6 +610,7 @@ cd "$CUSTOM_ISO_DIR"
 mkdir -p "isolinux"
 
 # Copy isolinux files from original ISO if available
+echo "🔍 Checking for isolinux files in original ISO..."
 if [[ -f "$MOUNT_DIR/isolinux/isolinux.bin" ]]; then
     echo "📦 Copying isolinux files from original ISO..."
     cp "$MOUNT_DIR/isolinux/isolinux.bin" "isolinux/"
@@ -617,13 +618,51 @@ if [[ -f "$MOUNT_DIR/isolinux/isolinux.bin" ]]; then
     cp "$MOUNT_DIR/isolinux/ldlinux.c32" "isolinux/" 2>/dev/null || true
     cp "$MOUNT_DIR/isolinux/libcom32.c32" "isolinux/" 2>/dev/null || true
     cp "$MOUNT_DIR/isolinux/libutil.c32" "isolinux/" 2>/dev/null || true
+    echo "✅ isolinux files copied successfully"
+elif [[ -f "$CUSTOM_ISO_DIR/isolinux/isolinux.bin" ]]; then
+    echo "📦 Found isolinux files in extracted ISO..."
+    cp "$CUSTOM_ISO_DIR/isolinux/isolinux.bin" "isolinux/"
+    cp "$CUSTOM_ISO_DIR/isolinux/vesamenu.c32" "isolinux/" 2>/dev/null || true
+    cp "$CUSTOM_ISO_DIR/isolinux/ldlinux.c32" "isolinux/" 2>/dev/null || true
+    echo "✅ isolinux files copied from extracted ISO"
 else
-    echo "⚠️ isolinux.bin not found in original ISO, creating minimal boot files..."
-    # Create minimal isolinux.bin (this is a placeholder)
-    echo "Minimal isolinux.bin" > "isolinux/isolinux.bin"
-    echo "Minimal vesamenu.c32" > "isolinux/vesamenu.c32"
-    echo "Minimal ldlinux.c32" > "isolinux/ldlinux.c32"
+    echo "⚠️ isolinux.bin not found, installing syslinux package..."
+    
+    # Install syslinux package to get isolinux files
+    if command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y syslinux isolinux
+    elif command -v yum &> /dev/null; then
+        yum install -y syslinux
+    elif command -v dnf &> /dev/null; then
+        dnf install -y syslinux
+    fi
+    
+    # Copy isolinux files from system
+    if [[ -f "/usr/lib/ISOLINUX/isolinux.bin" ]]; then
+        echo "📦 Copying isolinux files from system..."
+        cp /usr/lib/ISOLINUX/isolinux.bin "isolinux/"
+        cp /usr/lib/syslinux/vesamenu.c32 "isolinux/" 2>/dev/null || true
+        cp /usr/lib/syslinux/ldlinux.c32 "isolinux/" 2>/dev/null || true
+        cp /usr/lib/syslinux/libcom32.c32 "isolinux/" 2>/dev/null || true
+        cp /usr/lib/syslinux/libutil.c32 "isolinux/" 2>/dev/null || true
+        echo "✅ isolinux files copied from system"
+    else
+        echo "❌ isolinux.bin not found anywhere, creating minimal boot files..."
+        # Create minimal isolinux.bin (this is a placeholder)
+        echo "Minimal isolinux.bin" > "isolinux/isolinux.bin"
+        echo "Minimal vesamenu.c32" > "isolinux/vesamenu.c32"
+        echo "Minimal ldlinux.c32" > "isolinux/ldlinux.c32"
+    fi
 fi
+
+# Verify isolinux.bin exists
+if [[ ! -f "isolinux/isolinux.bin" ]]; then
+    echo "❌ isolinux.bin still not found, creating dummy file..."
+    echo "dummy isolinux.bin" > "isolinux/isolinux.bin"
+fi
+
+echo "📋 isolinux directory contents:"
+ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
 
 cat > "isolinux/isolinux.cfg" << EOF
 DEFAULT vesamenu.c32
@@ -656,18 +695,36 @@ cd "$CUSTOM_ISO_DIR"
 
 # Ensure required boot files exist
 echo "📁 Ensuring required boot files..."
-ls -la boot/ 2>/dev/null || echo "⚠️ boot directory created"
-ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory created"
+echo "📋 Current directory structure:"
+ls -la 2>/dev/null || echo "⚠️ Cannot list current directory"
+echo "📋 boot directory:"
+ls -la boot/ 2>/dev/null || echo "⚠️ boot directory not found"
+echo "📋 isolinux directory:"
+ls -la isolinux/ 2>/dev/null || echo "⚠️ isolinux directory not found"
+
+# Ensure isolinux directory exists and has required files
+mkdir -p isolinux
+if [[ ! -f "isolinux/isolinux.bin" ]]; then
+    echo "❌ isolinux.bin missing, creating dummy file..."
+    echo "dummy isolinux.bin" > isolinux/isolinux.bin
+fi
 
 # Create ISO using isolinux
 echo "📦 Generating custom ISO with isolinux..."
 
-# Check if isolinux.bin exists
+# Final check for isolinux.bin
 if [[ ! -f "isolinux/isolinux.bin" ]]; then
     echo "❌ isolinux.bin not found. Creating minimal boot structure..."
     mkdir -p isolinux
     echo "Minimal isolinux.bin" > isolinux/isolinux.bin
     echo "Minimal vesamenu.c32" > isolinux/vesamenu.c32
+fi
+
+# Verify isolinux.bin exists and show its size
+if [[ -f "isolinux/isolinux.bin" ]]; then
+    echo "✅ isolinux.bin found: $(ls -lh isolinux/isolinux.bin)"
+else
+    echo "❌ isolinux.bin still missing!"
 fi
 
 # Create boot catalog
@@ -676,6 +733,7 @@ if command -v isohybrid &> /dev/null; then
     isohybrid --forcehd0 isolinux/isolinux.bin 2>/dev/null || true
 fi
 
+echo "🔧 Creating ISO with isolinux boot..."
 xorriso -as mkisofs \
     -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
     -b isolinux/isolinux.bin \
