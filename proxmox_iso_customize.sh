@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.3 - Proper boot structure with partition table"
+echo "version 4.4 - HFS compatible boot structure"
 echo "=============================="
 
 # Check if running as root
@@ -102,8 +102,8 @@ MOUNT_SUCCESS=false
 
 if mount -o loop "$ISO_FILE" "$MOUNT_DIR" 2>/dev/null; then
     echo "📦 Using mount method to preserve original structure..."
-    # Copy entire ISO structure exactly as it is
-    rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/" --exclude=/proxmox
+    # Copy entire ISO structure exactly as it is (including HFS)
+    rsync -av "$MOUNT_DIR/" "$CUSTOM_ISO_DIR/"
     MOUNT_SUCCESS=true
     echo "✅ ISO structure preserved using mount method"
 else
@@ -680,7 +680,7 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
         dd if=/dev/zero of=isolinux/boot.cat bs=1 count=2048 2>/dev/null || true
     fi
     
-    # Create ISO with proper boot structure
+    # Create ISO with proper boot structure and HFS support
     xorriso -as mkisofs \
         -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
         -b isolinux/isolinux.bin \
@@ -690,7 +690,9 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
         -boot-info-table \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
-        -partition_offset 16 \
+        -hfs \
+        -hfs-creator "prox" \
+        -hfs-type "prox" \
         .
     
     # Make it a hybrid ISO (DD mode compatible)
@@ -714,7 +716,9 @@ if [[ -f "isolinux/isolinux.bin" ]]; then
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
-            -partition_offset 16 \
+            -hfs \
+            -hfs-creator "prox" \
+            -hfs-type "prox" \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             .
         echo "✅ Hybrid ISO created with xorriso"
@@ -742,7 +746,9 @@ elif [[ -d "boot/grub" ]]; then
         -boot-info-table \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
-        -partition_offset 16 \
+        -hfs \
+        -hfs-creator "prox" \
+        -hfs-type "prox" \
         .
     
     # Make it a hybrid ISO
@@ -764,7 +770,9 @@ else
         -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
         -r -V "PROXMOX_8_4" \
         -joliet-long \
-        -partition_offset 16 \
+        -hfs \
+        -hfs-creator "prox" \
+        -hfs-type "prox" \
         .
     
     # Try to make it hybrid if possible
@@ -797,7 +805,9 @@ else
             -boot-info-table \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
-            -partition_offset 16 \
+            -hfs \
+            -hfs-creator "prox" \
+            -hfs-type "prox" \
             .
     else
         echo "❌ Failed to create ISO. Trying without isolinux..."
@@ -806,7 +816,9 @@ else
             -o "$WORK_DIR/proxmox-ve_${PROXMOX_VERSION}-1-r8168.iso" \
             -r -V "PROXMOX_8_4" \
             -joliet-long \
-            -partition_offset 16 \
+            -hfs \
+            -hfs-creator "prox" \
+            -hfs-type "prox" \
             .
         
         if [[ $? -eq 0 ]]; then
@@ -834,6 +846,7 @@ echo "- Kernel-level driver integration (no post-installation required)"
 echo ""
 echo "💡 ISO Information:"
 echo "- This ISO has R8168 driver integrated into kernel"
+echo "- HFS compatibility preserved (UltraISO compatible)"
 echo "- Original ISO structure preserved with driver integration"
 echo "- Try standard ISO mode first in Rufus"
 echo "- If standard mode fails, try DD mode"
