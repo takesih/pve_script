@@ -19,7 +19,7 @@ KERNEL_MODULES_DIR="/usr/kernel_modules"
 echo "=============================="
 echo "Proxmox ${PROXMOX_VERSION} ISO Customization Tool"
 echo "Realtek R8168 Driver Integration - Kernel Level"
-echo "version 4.18 - Original initrd structure preservation method"
+echo "version 4.19 - R8169 driver blacklist and R8168 priority method"
 echo "=============================="
 
 # Check if running as root
@@ -583,6 +583,13 @@ EOF
 blacklist r8169
 options r8168 aspm=0 eee_enable=0
 EOF
+
+# Create additional blacklist file for stronger prevention
+cat > "etc/modprobe.d/r8169-blacklist.conf" << 'EOF'
+# Completely blacklist r8169 driver
+blacklist r8169
+install r8169 /bin/true
+EOF
     
     # Repack initrd
     echo "📦 Repacking initrd with driver integration..."
@@ -601,8 +608,11 @@ else
     cat > "$INITRD_DIR/etc/rc.local" << 'EOF'
 #!/bin/bash
 # Minimal R8168 driver setup
+# Force unload r8169 and load r8168
+modprobe -r r8169 2>/dev/null || true
+sleep 1
+
 if lspci | grep -i realtek | grep -q "RTL8111\|RTL8168\|RTL8411"; then
-    modprobe -r r8169 2>/dev/null || true
     modprobe r8168 2>/dev/null || echo "R8168 driver not available"
 fi
 exit 0
@@ -756,10 +766,10 @@ if [[ -f "$ORIGINAL_INITRD" ]]; then
             fi
             
             # Create our init script in the original structure
-            echo "📝 Creating init script in original structure..."
-            cat > "$ORIGINAL_INITRD_DIR/scripts/local-top/r8168" << 'EOF'
+echo "📝 Creating init script in original structure..."
+cat > "$ORIGINAL_INITRD_DIR/scripts/local-top/r8168" << 'EOF'
 #!/bin/sh
-# Load R8168 driver early in boot process
+# Load R8168 driver early in boot process and blacklist r8169
 PREREQ=""
 prereqs()
 {
@@ -772,10 +782,16 @@ case "$1" in
         ;;
 esac
 
+# Blacklist r8169 driver to prevent conflicts
+echo "blacklist r8169" > /etc/modprobe.d/r8168-blacklist.conf
+
+# Unload r8169 if already loaded
+rmmod r8169 2>/dev/null || true
+
 # Load R8168 driver
 modprobe r8168 2>/dev/null || true
 EOF
-            chmod +x "$ORIGINAL_INITRD_DIR/scripts/local-top/r8168"
+chmod +x "$ORIGINAL_INITRD_DIR/scripts/local-top/r8168"
             
             # Repack with original compression method
             echo "📦 Repacking initrd.img with original method..."
