@@ -55,7 +55,7 @@ cd "$WORK_DIR"
 if [[ -f "proxmox-ve_${PROXMOX_VERSION}-1.iso" ]]; then
     echo "ℹ️ ISO file already exists, skipping download."
 else
-    wget "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
+    wget --no-check-certificate "$PROXMOX_ISO_URL" -O "proxmox-ve_${PROXMOX_VERSION}-1.iso"
 fi
 
 # Mount ISO
@@ -76,7 +76,7 @@ mkdir -p "drivers"
 
 # Download driver from kernel.org or alternative source
 DRIVER_URL="https://raw.githubusercontent.com/torvalds/linux/master/drivers/net/ethernet/realtek/r8168.c"
-wget "$DRIVER_URL" -O "drivers/r8168.c" || {
+wget --no-check-certificate "$DRIVER_URL" -O "drivers/r8168.c" || {
     echo "⚠️ Could not download driver from kernel.org, using alternative method..."
     # Alternative: Create a simple driver info file
     cat > "drivers/r8168_info.txt" << 'EOF'
