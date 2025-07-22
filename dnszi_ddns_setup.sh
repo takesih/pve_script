@@ -131,6 +131,16 @@ EOF
     echo "- Boot update: Enabled"
     echo "- Schedule: Every 3 hours"
     echo ""
+    
+    # Execute the DDNS update script once to test
+    echo "🧪 Executing DDNS update script for testing..."
+    if "$DDNS_SCRIPT"; then
+        echo "✅ DDNS update script executed successfully!"
+    else
+        echo "⚠️ DDNS update script execution failed, but installation completed."
+    fi
+    
+    echo ""
     echo "💡 To check status:"
     echo "crontab -l"
     echo "tail -f /var/log/syslog | grep dnszi"
