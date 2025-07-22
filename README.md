@@ -43,6 +43,20 @@ DNSZI 서비스를 위한 DDNS 자동 업데이트를 설정하는 스크립트�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
+### 4. Proxmox ISO 커스터마이징 도구
+Proxmox 8.4 ISO에 Realtek R8168 랜카드 드라이버를 통합하는 스크립트입니다.
+
+**기능:**
+- **ISO 다운로드**: 공식 Proxmox 8.4 ISO 자동 다운로드
+- **드라이버 통합**: Realtek R8168 드라이버를 initrd에 통합
+- **부트 메뉴**: 커스텀 부트 메뉴 생성
+- **패키징**: 새로운 ISO 파일 생성
+
+**실행 방법:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
+```
+
 
 
  
