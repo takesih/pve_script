@@ -3,12 +3,12 @@
 # Proxmox LVM-Thin Setup Script
 # LVM을 LVM-thin으로 변경하거나 새로 설정하는 스크립트
 
+# 2025-08-04 12:12:53
 set -e
 
 echo "=============================="
 echo "Proxmox LVM-Thin Setup Tool"
 echo "Convert LVM to LVM-thin or setup new LVM-thin"
-echo "250504 121253"
 echo "=============================="
 
 # Check root privileges
