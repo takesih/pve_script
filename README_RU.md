@@ -59,7 +59,21 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Инструмент настройки ISO Proxmox
+### 4. Инструмент настройки LVM-Thin
+Скрипт для преобразования существующего LVM в LVM-thin или настройки новой конфигурации LVM-thin.
+
+**Функции:**
+- **Преобразование LVM-Thin**: Автоматическое преобразование существующего LVM в LVM-thin
+- **Новая настройка**: Создание нового пула и тома LVM-thin
+- **Автоматическое резервное копирование**: Опция для резервного копирования существующих данных
+- **Умное обнаружение**: Обнаружение, если LVM-thin уже настроен
+
+**Выполнение:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
+```
+
+### 5. Инструмент настройки ISO Proxmox
 Скрипт для интеграции драйвера сетевой карты Realtek R8168 в ISO Proxmox 8.4.
 
 **Функции:**

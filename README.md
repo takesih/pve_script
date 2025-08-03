@@ -59,7 +59,21 @@ DNSZI 서비스를 위한 DDNS 자동 업데이트를 설정하는 스크립트�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Proxmox ISO 커스터마이징 도구
+### 4. LVM-Thin 설정 도구
+기존 LVM을 LVM-thin으로 변환하거나 새로운 LVM-thin을 설정하는 스크립트입니다.
+
+**기능:**
+- **LVM-Thin 변환**: 기존 LVM을 LVM-thin으로 자동 변환
+- **새로운 설정**: LVM-thin 풀과 볼륨을 새로 생성
+- **자동 백업**: 기존 데이터 백업 옵션 제공
+- **스마트 감지**: 이미 LVM-thin이 설정된 경우 감지
+
+**실행 방법:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
+```
+
+### 5. Proxmox ISO 커스터마이징 도구
 Proxmox 8.4 ISO에 Realtek R8168 랜카드 드라이버를 통합하는 스크립트입니다.
 
 **기능:**

@@ -59,7 +59,21 @@ Script pour configurer la mise à jour automatique DDNS pour le service DNSZI.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Outil de Personnalisation ISO Proxmox
+### 4. Outil de Configuration LVM-Thin
+Script pour convertir LVM existant en LVM-thin ou configurer une nouvelle configuration LVM-thin.
+
+**Fonctionnalités :**
+- **Conversion LVM-Thin** : Convertir automatiquement LVM existant en LVM-thin
+- **Nouvelle Configuration** : Créer un nouveau pool et volume LVM-thin
+- **Sauvegarde Automatique** : Option pour sauvegarder les données existantes
+- **Détection Intelligente** : Détecter si LVM-thin est déjà configuré
+
+**Exécution :**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
+```
+
+### 5. Outil de Personnalisation ISO Proxmox
 Script pour intégrer le pilote de carte réseau Realtek R8168 dans l'ISO Proxmox 8.4.
 
 **Fonctionnalités :**

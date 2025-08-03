@@ -59,7 +59,21 @@ Skript zur Konfiguration der automatischen DDNS-Aktualisierung für den DNSZI-Se
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Proxmox ISO Anpassungs-Tool
+### 4. LVM-Thin Setup-Tool
+Skript zur Konvertierung bestehender LVM zu LVM-thin oder zur Einrichtung einer neuen LVM-thin-Konfiguration.
+
+**Funktionen:**
+- **LVM-Thin-Konvertierung**: Automatische Konvertierung bestehender LVM zu LVM-thin
+- **Neue Einrichtung**: Erstellen eines neuen LVM-thin-Pools und -Volumens
+- **Automatische Sicherung**: Option zur Sicherung bestehender Daten
+- **Intelligente Erkennung**: Erkennung, ob LVM-thin bereits konfiguriert ist
+
+**Ausführung:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
+```
+
+### 5. Proxmox ISO Anpassungs-Tool
 Skript zur Integration des Realtek R8168 Netzwerkadapter-Treibers in das Proxmox 8.4 ISO.
 
 **Funktionen:**
