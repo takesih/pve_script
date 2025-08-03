@@ -41,6 +41,8 @@ check_lvm_thin() {
         echo "🔍 Returning status 2 for new LVM-thin setup"
         return 2
     fi
+    
+    echo "🔍 Function check_lvm_thin completed"
 }
 
 # Function to backup existing data volume
@@ -180,7 +182,9 @@ lvm_status=$?
 
 echo "🔍 LVM status code: $lvm_status"
 
-# Force execution if status is 2 (no data volume found)
+# Direct execution based on status
+echo "🚀 Processing LVM status: $lvm_status"
+
 if [ "$lvm_status" -eq 2 ]; then
     echo "🔄 Creating new LVM-thin setup..."
     echo "🚀 Starting LVM-thin creation process..."
