@@ -93,15 +93,19 @@ convert_to_lvm_thin() {
 # Function to create new LVM-thin setup
 create_new_lvm_thin() {
     echo "🔄 Creating new LVM-thin setup..."
+    echo "🔍 Starting create_new_lvm_thin function..."
     
     # Get current root volume size
     root_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
     root_size_gb=$(numfmt --from=iec --to=iec $root_size | sed 's/[^0-9]//g')
     
     echo "📊 Current root volume size: ${root_size_gb}GB"
+    echo "🔍 Raw root size in bytes: $root_size"
     
     # Calculate space allocation (root: 20GB, thin pool: rest)
+    echo "🔍 Comparing root_size_gb ($root_size_gb) with 50..."
     if [ "$root_size_gb" -gt 50 ]; then
+        echo "🔍 Root volume is large (>50GB), will resize to 20GB"
         # If root is large enough, resize to 20GB and use rest for thin pool
         echo "🔄 Resizing root volume to 20GB..."
         lvresize -L 20G /dev/pve/root
@@ -121,6 +125,7 @@ create_new_lvm_thin() {
         lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
         
     else
+        echo "🔍 Root volume is small (<=50GB), using 80% of space for thin pool"
         # If root is small, use 80% of current space for thin pool
         echo "🔄 Root volume is small, using 80% of space for thin pool..."
         thin_space=$((root_size * 80 / 100))
@@ -169,6 +174,8 @@ fi
 check_lvm_thin
 lvm_status=$?
 
+echo "🔍 LVM status code: $lvm_status"
+
 case $lvm_status in
     0)
         echo "✅ LVM-thin is already properly configured."
@@ -189,7 +196,12 @@ case $lvm_status in
         ;;
     2)
         echo "🔄 Creating new LVM-thin setup..."
+        echo "🚀 Starting LVM-thin creation process..."
         create_new_lvm_thin
+        ;;
+    *)
+        echo "❌ Unexpected LVM status: $lvm_status"
+        exit 1
         ;;
 esac
 
