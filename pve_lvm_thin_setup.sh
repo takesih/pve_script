@@ -8,6 +8,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM-Thin Setup Tool"
 echo "Convert LVM to LVM-thin or setup new LVM-thin"
+echo "250504 121253"
 echo "=============================="
 
 # Check root privileges
@@ -19,6 +20,8 @@ fi
 
 # Function to check if LVM-thin is already configured
 check_lvm_thin() {
+    echo "🔍 Checking for existing data volume..."
+    
     if lvs /dev/pve/data >/dev/null 2>&1; then
         echo "📊 Current LVM status:"
         lvs
@@ -35,6 +38,7 @@ check_lvm_thin() {
         fi
     else
         echo "📝 No existing data volume found. Will create new LVM-thin."
+        echo "🔍 Returning status 2 for new LVM-thin setup"
         return 2
     fi
 }
@@ -176,34 +180,31 @@ lvm_status=$?
 
 echo "🔍 LVM status code: $lvm_status"
 
-case $lvm_status in
-    0)
-        echo "✅ LVM-thin is already properly configured."
-        echo "📊 Current LVM status:"
-        lvs
-        exit 0
-        ;;
-    1)
-        echo "🔄 Converting existing LVM to LVM-thin..."
-        
-        # Ask for backup
-        read -p "Create backup of existing data? (y/N): " backup_confirm
-        if [[ "$backup_confirm" == "y" || "$backup_confirm" == "Y" ]]; then
-            backup_data_volume
-        fi
-        
-        convert_to_lvm_thin
-        ;;
-    2)
-        echo "🔄 Creating new LVM-thin setup..."
-        echo "🚀 Starting LVM-thin creation process..."
-        create_new_lvm_thin
-        ;;
-    *)
-        echo "❌ Unexpected LVM status: $lvm_status"
-        exit 1
-        ;;
-esac
+# Force execution if status is 2 (no data volume found)
+if [ "$lvm_status" -eq 2 ]; then
+    echo "🔄 Creating new LVM-thin setup..."
+    echo "🚀 Starting LVM-thin creation process..."
+    create_new_lvm_thin
+elif [ "$lvm_status" -eq 0 ]; then
+    echo "✅ LVM-thin is already properly configured."
+    echo "📊 Current LVM status:"
+    lvs
+    exit 0
+elif [ "$lvm_status" -eq 1 ]; then
+    echo "🔄 Converting existing LVM to LVM-thin..."
+    
+    # Ask for backup
+    read -p "Create backup of existing data? (y/N): " backup_confirm
+    if [[ "$backup_confirm" == "y" || "$backup_confirm" == "Y" ]]; then
+        backup_data_volume
+    fi
+    
+    convert_to_lvm_thin
+else
+    echo "❌ Unexpected LVM status: $lvm_status"
+    echo "🔄 Forcing new LVM-thin setup..."
+    create_new_lvm_thin
+fi
 
 echo ""
 echo "📊 Final LVM status:"
