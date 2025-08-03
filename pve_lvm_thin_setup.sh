@@ -94,23 +94,55 @@ convert_to_lvm_thin() {
 create_new_lvm_thin() {
     echo "🔄 Creating new LVM-thin setup..."
     
-    # Calculate available space (leave 20% for root)
-    total_space=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
-    thin_space=$((total_space * 80 / 100))
+    # Get current root volume size
+    root_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+    root_size_gb=$(numfmt --from=iec --to=iec $root_size | sed 's/[^0-9]//g')
     
-    # Resize root volume to leave space for thin pool
-    echo "🔄 Resizing root volume..."
-    lvresize -L $(numfmt --to=iec $thin_space)B /dev/pve/root
+    echo "📊 Current root volume size: ${root_size_gb}GB"
     
-    # Create thin pool
-    echo "🔄 Creating LVM-thin pool..."
-    lvcreate -l 100%FREE -T pve/data
-    
-    # Create thin volume using 80% of available space
-    echo "🔄 Creating thin volume..."
-    thin_volume_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-    thin_volume_size=$((thin_volume_size * 80 / 100))
-    lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
+    # Calculate space allocation (root: 20GB, thin pool: rest)
+    if [ "$root_size_gb" -gt 50 ]; then
+        # If root is large enough, resize to 20GB and use rest for thin pool
+        echo "🔄 Resizing root volume to 20GB..."
+        lvresize -L 20G /dev/pve/root
+        
+        # Resize filesystem
+        echo "🔄 Resizing filesystem..."
+        resize2fs -p /dev/pve/root
+        
+        # Create thin pool with remaining space
+        echo "🔄 Creating LVM-thin pool..."
+        lvcreate -l 100%FREE -T pve/data
+        
+        # Create thin volume using 90% of thin pool space
+        echo "🔄 Creating thin volume..."
+        thin_pool_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+        thin_volume_size=$((thin_pool_size * 90 / 100))
+        lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
+        
+    else
+        # If root is small, use 80% of current space for thin pool
+        echo "🔄 Root volume is small, using 80% of space for thin pool..."
+        thin_space=$((root_size * 80 / 100))
+        
+        # Resize root volume
+        echo "🔄 Resizing root volume..."
+        lvresize -L $(numfmt --to=iec $thin_space)B /dev/pve/root
+        
+        # Resize filesystem
+        echo "🔄 Resizing filesystem..."
+        resize2fs -p /dev/pve/root
+        
+        # Create thin pool
+        echo "🔄 Creating LVM-thin pool..."
+        lvcreate -l 100%FREE -T pve/data
+        
+        # Create thin volume using 90% of thin pool space
+        echo "🔄 Creating thin volume..."
+        thin_pool_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+        thin_volume_size=$((thin_pool_size * 90 / 100))
+        lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
+    fi
     
     echo "✅ New LVM-thin setup completed!"
 }
