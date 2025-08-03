@@ -59,8 +59,10 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. أداة إعداد LVM-Thin
+### 4. أداة إعداد LVM-Thin ⚠️ **قيد الاختبار - لا تستخدم**
 سكريبت لتحويل LVM الموجود إلى LVM-thin أو إعداد تكوين LVM-thin جديد.
+
+**⚠️ تحذير: هذا السكريبت قيد الاختبار حالياً وقد يدمر نظامك. لا تستخدمه!**
 
 **الميزات:**
 - **تحويل LVM-Thin**: تحويل LVM الموجود تلقائياً إلى LVM-thin
@@ -72,6 +74,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
 ```
+
+**🚨 حرج: هذا السكريبت قيد الاختبار وقد يسبب فقدان بيانات النظام. لا تستخدم في بيئات الإنتاج!**
 
 ### 5. أداة تخصيص ISO Proxmox
 سكريبت لدمج برنامج تشغيل بطاقة الشبكة Realtek R8168 في ISO Proxmox 8.4.

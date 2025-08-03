@@ -59,8 +59,10 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin设置工具
+### 4. LVM-Thin设置工具 ⚠️ **测试中 - 禁止使用**
 将现有LVM转换为LVM-thin或设置新的LVM-thin配置的脚本。
+
+**⚠️ 警告：此脚本目前正在测试中，可能会破坏您的系统。请勿使用！**
 
 **功能：**
 - **LVM-Thin转换**：自动将现有LVM转换为LVM-thin
@@ -72,6 +74,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
 ```
+
+**🚨 重要：此脚本正在测试中，可能导致系统数据丢失。请勿在生产环境中使用！**
 
 ### 5. Proxmox ISO定制工具
 将Realtek R8168网卡驱动程序集成到Proxmox 8.4 ISO中的脚本。

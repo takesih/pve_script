@@ -59,8 +59,10 @@ Script to configure DDNS automatic update for DNSZI service.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin Setup Tool
+### 4. LVM-Thin Setup Tool ⚠️ **TESTING - DO NOT USE**
 Script to convert existing LVM to LVM-thin or setup new LVM-thin configuration.
+
+**⚠️ WARNING: This script is currently in testing and may destroy your system. DO NOT USE!**
 
 **Features:**
 - **LVM-Thin Conversion**: Automatically convert existing LVM to LVM-thin
@@ -72,6 +74,8 @@ Script to convert existing LVM to LVM-thin or setup new LVM-thin configuration.
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
 ```
+
+**🚨 CRITICAL: This script is in testing and may cause system data loss. DO NOT use in production environments!**
 
 ### 5. Proxmox ISO Customization Tool
 Script to integrate Realtek R8168 network card driver into Proxmox 8.4 ISO.
