@@ -35,6 +35,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ### 2. Outil de Redimensionnement LVM
 Script pour intégrer local-lvm dans local pour optimiser l'espace disque.
 
+**⚠️ Important : L'utilisation de ce script rend difficile le retour en arrière et les sauvegardes d'instantanés ne fonctionneront pas.**
+
 **Fonctionnalités :**
 - **Intégration LVM** : Intégrer local-lvm dans local
 - **Auto Redimensionnement** : Étendre automatiquement le volume root
@@ -59,16 +61,22 @@ Script pour configurer la mise à jour automatique DDNS pour le service DNSZI.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Outil de Configuration LVM-Thin ⚠️ **EN TEST - NE PAS UTILISER**
-Script pour convertir LVM existant en LVM-thin ou configurer une nouvelle configuration LVM-thin.
+### 4. Outil de Configuration de Taille LVM-Thin ⚠️ **EN TEST - NE PAS UTILISER**
+Script pour redimensionner les répertoires LVM et LVM-thin après l'installation de Proxmox.
 
 **⚠️ AVERTISSEMENT : Ce script est actuellement en test et peut détruire votre système. NE L'UTILISEZ PAS !**
 
 **Fonctionnalités :**
-- **Conversion LVM-Thin** : Convertir automatiquement LVM existant en LVM-thin
-- **Nouvelle Configuration** : Créer un nouveau pool et volume LVM-thin
-- **Sauvegarde Automatique** : Option pour sauvegarder les données existantes
-- **Détection Intelligente** : Détecter si LVM-thin est déjà configuré
+- **Configuration de Taille Flexible** : Configuration automatique/personnalisée/basée sur pourcentage
+- **Redimensionnement du Volume Root** : Support sécurisé pour expansion/réduction
+- **Reconfiguration LVM-Thin** : Recréer le volume de données existant comme LVM-thin
+- **Sur-approvisionnement** : Utilisation efficace de l'espace avec 95% de sur-approvisionnement
+- **Confirmation Étape par Étape** : Opération sécurisée avec confirmation utilisateur
+
+**Options de Configuration de Taille :**
+1. **Automatique** : Root 20GB, Data espace restant
+2. **Personnalisé** : Tailles spécifiées par l'utilisateur
+3. **Pourcentage** : Root 30%, Data 70%
 
 **Exécution :**
 ```bash

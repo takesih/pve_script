@@ -35,6 +35,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ### 2. Ferramenta de Redimensionamento LVM
 Script para integrar local-lvm em local para otimizar o espaço em disco.
 
+**⚠️ Importante: Usar este script torna difícil reverter e backups de snapshot não funcionarão.**
+
 **Recursos:**
 - **Integração LVM**: Integrar local-lvm em local
 - **Auto Redimensionamento**: Estender automaticamente o volume root
@@ -59,16 +61,22 @@ Script para configurar a atualização automática DDNS para o serviço DNSZI.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Ferramenta de Configuração LVM-Thin ⚠️ **EM TESTE - NÃO USAR**
-Script para converter LVM existente para LVM-thin ou configurar nova configuração LVM-thin.
+### 4. Ferramenta de Configuração de Tamanho LVM-Thin ⚠️ **EM TESTE - NÃO USAR**
+Script para redimensionar diretórios LVM e LVM-thin após a instalação do Proxmox.
 
 **⚠️ AVISO: Este script está atualmente em teste e pode destruir seu sistema. NÃO USE!**
 
 **Recursos:**
-- **Conversão LVM-Thin**: Converter automaticamente LVM existente para LVM-thin
-- **Nova Configuração**: Criar novo pool e volume LVM-thin
-- **Backup Automático**: Opção para fazer backup de dados existentes
-- **Detecção Inteligente**: Detectar se LVM-thin já está configurado
+- **Configuração de Tamanho Flexível**: Configuração automática/personalizada/baseada em porcentagem
+- **Redimensionamento do Volume Root**: Suporte seguro para expansão/redução
+- **Reconfiguração LVM-Thin**: Recriar volume de dados existente como LVM-thin
+- **Sobre-provisionamento**: Utilização eficiente do espaço com 95% de sobre-provisionamento
+- **Confirmação Passo a Passo**: Operação segura com confirmação do usuário
+
+**Opções de Configuração de Tamanho:**
+1. **Automático**: Root 20GB, Data espaço restante
+2. **Personalizado**: Tamanhos especificados pelo usuário
+3. **Porcentagem**: Root 30%, Data 70%
 
 **Execução:**
 ```bash

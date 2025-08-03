@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Proxmox LVM-Thin Setup Script
-# LVM을 LVM-thin으로 변경하거나 새로 설정하는 스크립트
+# Proxmox LVM-Thin Size Configuration Script
+# Proxmox 설치 완료 후 LVM 디렉토리와 LVM-thin 사이즈를 변경하는 스크립트
 
 # 2025-08-04 12:19:40
 set -e
 
 echo "=============================="
-echo "Proxmox LVM-Thin Setup Tool"
-echo "Convert LVM to LVM-thin or setup new LVM-thin"
+echo "Proxmox LVM-Thin Size Configuration Tool"
+echo "Resize LVM directories and LVM-thin after Proxmox installation"
 echo "=============================="
 
 # Check root privileges
@@ -18,144 +18,155 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# Function to check if LVM-thin is already configured
-check_lvm_thin() {
-    echo "🔍 Checking for existing data volume..."
+# Function to get user input for size configuration
+get_size_configuration() {
+    echo "� CLVM Size Configuration"
+    echo "Current storage layout:"
+    echo ""
     
-    if lvs /dev/pve/data >/dev/null 2>&1; then
-        echo "📊 Current LVM status:"
-        lvs
-        echo ""
-        echo "🔍 Checking if LVM-thin is already configured..."
-        
-        # Check if data volume is thin
-        if lvs -o lv_name,lv_layout /dev/pve/data | grep -q "thin"; then
-            echo "✅ LVM-thin is already configured on /dev/pve/data"
-            return 0
-        else
-            echo "📝 Found regular LVM volume. Will convert to LVM-thin."
-            return 1
-        fi
+    # Show current LVM status
+    echo "📊 Current LVM volumes:"
+    lvs --units g
+    echo ""
+    
+    # Show current disk usage
+    echo "📊 Current disk usage:"
+    df -h /
+    echo ""
+    
+    # Get total VG size
+    total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
+    echo "📊 Total Volume Group size: ${total_vg_size}GB"
+    echo ""
+    
+    # Get user preferences
+    echo "🔧 Size Configuration Options:"
+    echo "1. Automatic (Root: 20GB, Data: remaining space)"
+    echo "2. Custom sizes"
+    echo "3. Percentage based (Root: 30%, Data: 70%)"
+    echo ""
+    
+    read -p "Select option (1-3): " size_option
+    
+    case $size_option in
+        1)
+            ROOT_SIZE="20G"
+            DATA_SIZE="remaining"
+            echo "✅ Selected: Root 20GB, Data remaining space"
+            ;;
+        2)
+            read -p "Enter root volume size (e.g., 25G): " ROOT_SIZE
+            read -p "Enter data volume size (e.g., 100G or 'remaining'): " DATA_SIZE
+            echo "✅ Selected: Root ${ROOT_SIZE}, Data ${DATA_SIZE}"
+            ;;
+        3)
+            ROOT_SIZE="30%"
+            DATA_SIZE="70%"
+            echo "✅ Selected: Root 30%, Data 70%"
+            ;;
+        *)
+            echo "❌ Invalid option. Using automatic configuration."
+            ROOT_SIZE="20G"
+            DATA_SIZE="remaining"
+            ;;
+    esac
+}
+
+# Function to calculate sizes based on user input
+calculate_sizes() {
+    local total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
+    
+    if [[ "$ROOT_SIZE" == *"%" ]]; then
+        local root_percent=${ROOT_SIZE%\%}
+        ROOT_SIZE_CALC=$(echo "scale=0; $total_vg_size * $root_percent / 100" | bc)G
     else
-        echo "📝 No existing data volume found. Will create new LVM-thin."
-        echo "🔍 Returning status 2 for new LVM-thin setup"
-        return 2
+        ROOT_SIZE_CALC="$ROOT_SIZE"
     fi
     
-    echo "🔍 Function check_lvm_thin completed"
+    if [[ "$DATA_SIZE" == *"%" ]]; then
+        local data_percent=${DATA_SIZE%\%}
+        DATA_SIZE_CALC=$(echo "scale=0; $total_vg_size * $data_percent / 100" | bc)G
+    elif [[ "$DATA_SIZE" == "remaining" ]]; then
+        DATA_SIZE_CALC="100%FREE"
+    else
+        DATA_SIZE_CALC="$DATA_SIZE"
+    fi
+    
+    echo "📊 Calculated sizes:"
+    echo "   Root volume: $ROOT_SIZE_CALC"
+    echo "   Data volume: $DATA_SIZE_CALC"
 }
 
-# Function to backup existing data volume
-backup_data_volume() {
-    echo "🔄 Creating backup of existing data volume..."
+# Function to resize root volume
+resize_root_volume() {
+    echo "🔄 Resizing root volume to $ROOT_SIZE_CALC..."
     
-    # Create backup directory
-    mkdir -p /root/lvm_backup
+    # Check if root volume needs resizing
+    current_root_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+    target_root_size=$(echo "$ROOT_SIZE_CALC" | sed 's/G//')
     
-    # Get available space for backup
-    available_space=$(df /root | awk 'NR==2 {print $4}')
-    data_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+    if (( $(echo "$current_root_size > $target_root_size" | bc -l) )); then
+        echo "🔄 Shrinking root volume from ${current_root_size}G to ${target_root_size}G..."
+        
+        # First shrink filesystem
+        echo "🔄 Shrinking filesystem..."
+        e2fsck -f /dev/pve/root
+        resize2fs /dev/pve/root $ROOT_SIZE_CALC
+        
+        # Then shrink logical volume
+        echo "🔄 Shrinking logical volume..."
+        lvresize -L $ROOT_SIZE_CALC /dev/pve/root
+        
+    elif (( $(echo "$current_root_size < $target_root_size" | bc -l) )); then
+        echo "🔄 Expanding root volume from ${current_root_size}G to ${target_root_size}G..."
+        
+        # First expand logical volume
+        echo "🔄 Expanding logical volume..."
+        lvresize -L $ROOT_SIZE_CALC /dev/pve/root
+        
+        # Then expand filesystem
+        echo "🔄 Expanding filesystem..."
+        resize2fs /dev/pve/root
+    else
+        echo "✅ Root volume is already the correct size (${current_root_size}G)"
+    fi
+}
+
+# Function to setup or resize LVM-thin data volume
+setup_lvm_thin_data() {
+    echo "🔄 Setting up LVM-thin data volume..."
     
-    if [ "$available_space" -lt "$data_size" ]; then
-        echo "⚠️  Warning: Insufficient space for full backup."
-        echo "   Available: $(numfmt --to=iec $available_space)B"
-        echo "   Data size: $(numfmt --to=iec $data_size)B"
-        read -p "Continue without backup? (y/N): " skip_backup
-        if [[ "$skip_backup" != "y" && "$skip_backup" != "Y" ]]; then
-            echo "❌ Operation cancelled."
-            exit 1
+    # Check if data volume exists
+    if lvs /dev/pve/data >/dev/null 2>&1; then
+        echo "📝 Existing data volume found. Removing for resize..."
+        
+        # Check if it's a thin volume
+        if lvs -o lv_name,lv_layout /dev/pve/data | grep -q "thin"; then
+            echo "🔄 Removing existing thin volume..."
+            lvremove -f /dev/pve/data
+        else
+            echo "🔄 Removing existing regular volume..."
+            lvremove -f /dev/pve/data
         fi
-        return 1
     fi
-    
-    # Create backup
-    dd if=/dev/pve/data of=/root/lvm_backup/data_backup.img bs=1M status=progress
-    echo "✅ Backup created: /root/lvm_backup/data_backup.img"
-    return 0
-}
-
-# Function to convert existing LVM to LVM-thin
-convert_to_lvm_thin() {
-    echo "🔄 Converting existing LVM to LVM-thin..."
-    
-    # Get current volume size
-    current_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-    
-    # Remove existing data volume
-    echo "🔄 Removing existing data volume..."
-    lvremove -f /dev/pve/data
     
     # Create thin pool
     echo "🔄 Creating LVM-thin pool..."
-    lvcreate -l 100%FREE -T pve/data
-    
-    # Create thin volume with same size as original
-    echo "🔄 Creating thin volume..."
-    lvcreate -V $(numfmt --from=iec $(numfmt --to=iec $current_size)B) -T pve/data -n data
-    
-    echo "✅ LVM-thin conversion completed!"
-}
-
-# Function to create new LVM-thin setup
-create_new_lvm_thin() {
-    echo "🔄 Creating new LVM-thin setup..."
-    echo "🔍 Starting create_new_lvm_thin function..."
-    
-    # Get current root volume size
-    root_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
-    root_size_gb=$(numfmt --from=iec --to=iec $root_size | sed 's/[^0-9]//g')
-    
-    echo "📊 Current root volume size: ${root_size_gb}GB"
-    echo "🔍 Raw root size in bytes: $root_size"
-    
-    # Calculate space allocation (root: 20GB, thin pool: rest)
-    echo "🔍 Comparing root_size_gb ($root_size_gb) with 50..."
-    if [ "$root_size_gb" -gt 50 ]; then
-        echo "🔍 Root volume is large (>50GB), will resize to 20GB"
-        # If root is large enough, resize to 20GB and use rest for thin pool
-        echo "🔄 Resizing root volume to 20GB..."
-        lvresize -L 20G /dev/pve/root
-        
-        # Resize filesystem
-        echo "🔄 Resizing filesystem..."
-        resize2fs -p /dev/pve/root
-        
-        # Create thin pool with remaining space
-        echo "🔄 Creating LVM-thin pool..."
+    if [[ "$DATA_SIZE_CALC" == "100%FREE" ]]; then
         lvcreate -l 100%FREE -T pve/data
-        
-        # Create thin volume using 90% of thin pool space
-        echo "🔄 Creating thin volume..."
-        thin_pool_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-        thin_volume_size=$((thin_pool_size * 90 / 100))
-        lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
-        
     else
-        echo "🔍 Root volume is small (<=50GB), using 80% of space for thin pool"
-        # If root is small, use 80% of current space for thin pool
-        echo "🔄 Root volume is small, using 80% of space for thin pool..."
-        thin_space=$((root_size * 80 / 100))
-        
-        # Resize root volume
-        echo "🔄 Resizing root volume..."
-        lvresize -L $(numfmt --to=iec $thin_space)B /dev/pve/root
-        
-        # Resize filesystem
-        echo "🔄 Resizing filesystem..."
-        resize2fs -p /dev/pve/root
-        
-        # Create thin pool
-        echo "🔄 Creating LVM-thin pool..."
-        lvcreate -l 100%FREE -T pve/data
-        
-        # Create thin volume using 90% of thin pool space
-        echo "🔄 Creating thin volume..."
-        thin_pool_size=$(lvs --noheadings --units b --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-        thin_volume_size=$((thin_pool_size * 90 / 100))
-        lvcreate -V $(numfmt --to=iec $thin_volume_size)B -T pve/data -n data
+        lvcreate -L $DATA_SIZE_CALC -T pve/data
     fi
     
-    echo "✅ New LVM-thin setup completed!"
+    # Get thin pool size for thin volume creation
+    thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+    
+    # Create thin volume (use 95% of pool size for over-provisioning)
+    thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
+    echo "🔄 Creating thin volume (${thin_volume_size}G)..."
+    lvcreate -V ${thin_volume_size}G -T pve/data -n data
+    
+    echo "✅ LVM-thin data volume setup completed!"
 }
 
 # Main execution
@@ -163,66 +174,69 @@ echo "📊 Checking current LVM status..."
 lvs
 
 echo ""
-echo "⚠️  Warnings:"
+echo "⚠️  Important Warnings:"
 echo "1. Stop all VMs and CTs before performing this operation."
-echo "2. All data in existing data volume will be lost unless backed up."
+echo "2. All data in existing data volume will be lost."
 echo "3. Do not reboot the system during the operation."
-echo "4. This operation will create LVM-thin pool and volume."
+echo "4. This will resize root volume and recreate data volume as LVM-thin."
+echo "5. Make sure you have backups of important data."
 echo ""
 
-read -p "Continue? (y/N): " confirm
+read -p "Continue with LVM resize operation? (y/N): " confirm
 if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ Operation cancelled."
     exit 1
 fi
 
-# Check current LVM-thin status
-check_lvm_thin
-lvm_status=$?
+# Get size configuration from user
+get_size_configuration
 
-echo "🔍 LVM status code: $lvm_status"
+# Calculate actual sizes
+calculate_sizes
 
-# Direct execution based on status
-echo "🚀 Processing LVM status: $lvm_status"
+echo ""
+echo "📋 Operation Summary:"
+echo "   Root volume will be resized to: $ROOT_SIZE_CALC"
+echo "   Data volume will be created as: $DATA_SIZE_CALC (LVM-thin)"
+echo ""
 
-if [ "$lvm_status" -eq 2 ]; then
-    echo "🔄 Creating new LVM-thin setup..."
-    echo "🚀 Starting LVM-thin creation process..."
-    create_new_lvm_thin
-elif [ "$lvm_status" -eq 0 ]; then
-    echo "✅ LVM-thin is already properly configured."
-    echo "📊 Current LVM status:"
-    lvs
-    exit 0
-elif [ "$lvm_status" -eq 1 ]; then
-    echo "🔄 Converting existing LVM to LVM-thin..."
-    
-    # Ask for backup
-    read -p "Create backup of existing data? (y/N): " backup_confirm
-    if [[ "$backup_confirm" == "y" || "$backup_confirm" == "Y" ]]; then
-        backup_data_volume
-    fi
-    
-    convert_to_lvm_thin
-else
-    echo "❌ Unexpected LVM status: $lvm_status"
-    echo "🔄 Forcing new LVM-thin setup..."
-    create_new_lvm_thin
+read -p "Proceed with these settings? (y/N): " final_confirm
+if [[ "$final_confirm" != "y" && "$final_confirm" != "Y" ]]; then
+    echo "❌ Operation cancelled."
+    exit 1
 fi
+
+# Install bc for calculations if not present
+if ! command -v bc &> /dev/null; then
+    echo "🔧 Installing bc for calculations..."
+    apt-get update && apt-get install -y bc
+fi
+
+# Resize root volume
+resize_root_volume
+
+# Setup LVM-thin data volume
+setup_lvm_thin_data
 
 echo ""
 echo "📊 Final LVM status:"
-lvs
+lvs --units g
 
 echo ""
-echo "💡 Next steps:"
-echo "1. Check storage settings in Proxmox web interface."
-echo "2. Add content to local storage."
-echo "3. Restart VMs and CTs."
-echo "4. If backup was created, restore data if needed."
+echo "� NStorage usage:"
+df -h /
 
-if [ -f "/root/lvm_backup/data_backup.img" ]; then
-    echo ""
-    echo "📁 Backup available at: /root/lvm_backup/data_backup.img"
-    echo "To restore: dd if=/root/lvm_backup/data_backup.img of=/dev/pve/data"
-fi 
+echo ""
+echo "✅ LVM-thin resize operation completed successfully!"
+echo ""
+echo "💡 Next steps:"
+echo "1. Go to Proxmox web interface → Datacenter → Storage"
+echo "2. Edit 'local' storage and add content types (Disk image, Container)"
+echo "3. The data volume is now LVM-thin with over-provisioning capability"
+echo "4. You can now create VMs and containers using the resized storage"
+echo "5. Monitor thin pool usage: lvs -a"
+echo ""
+echo "📈 Storage Summary:"
+echo "   Root volume: $ROOT_SIZE_CALC (for Proxmox system)"
+echo "   Data volume: LVM-thin pool (for VMs and containers)"
+echo "   Thin provisioning: Enabled (allows over-allocation)" 

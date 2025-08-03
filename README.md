@@ -35,6 +35,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ### 2. LVM 리사이즈 도구
 local-lvm을 local에 통합하여 디스크 공간을 최적화하는 스크립트입니다.
 
+**⚠️ 중요: 이 스크립트를 사용하면 되돌리기가 어려우며 스냅샷백업이 되지 않습니다.**
+
 **기능:**
 - **LVM 통합**: local-lvm을 local에 통합
 - **자동 리사이즈**: root 볼륨을 자동으로 확장
@@ -59,16 +61,22 @@ DNSZI 서비스를 위한 DDNS 자동 업데이트를 설정하는 스크립트�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin 설정 도구 ⚠️ **테스트 중 - 사용 금지**
-기존 LVM을 LVM-thin으로 변환하거나 새로운 LVM-thin을 설정하는 스크립트입니다.
+### 4. LVM-Thin 사이즈 설정 도구 ⚠️ **테스트 중 - 사용 금지**
+Proxmox 설치 완료 후 LVM 디렉토리와 LVM-thin의 사이즈를 변경하는 스크립트입니다.
 
 **⚠️ 경고: 이 스크립트는 현재 테스트 중이며 시스템 파괴 위험이 있습니다. 사용하지 마세요!**
 
 **기능:**
-- **LVM-Thin 변환**: 기존 LVM을 LVM-thin으로 자동 변환
-- **새로운 설정**: LVM-thin 풀과 볼륨을 새로 생성
-- **자동 백업**: 기존 데이터 백업 옵션 제공
-- **스마트 감지**: 이미 LVM-thin이 설정된 경우 감지
+- **유연한 사이즈 설정**: 자동/커스텀/퍼센트 기반 사이즈 설정
+- **Root 볼륨 리사이징**: 안전한 확장/축소 지원
+- **LVM-Thin 재구성**: 기존 데이터 볼륨을 LVM-thin으로 재생성
+- **오버프로비저닝**: 95% 오버프로비저닝으로 효율적인 공간 활용
+- **단계별 확인**: 사용자 확인을 통한 안전한 작업 진행
+
+**사이즈 설정 옵션:**
+1. **자동 설정**: Root 20GB, Data 나머지 공간
+2. **커스텀 설정**: 사용자가 직접 크기 지정
+3. **퍼센트 설정**: Root 30%, Data 70%
 
 **실행 방법:**
 ```bash

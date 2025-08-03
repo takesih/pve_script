@@ -35,6 +35,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ### 2. Herramienta de Redimensionamiento LVM
 Script para integrar local-lvm en local para optimizar el espacio en disco.
 
+**⚠️ Importante: Usar este script hace difícil revertir y las copias de seguridad de instantáneas no funcionarán.**
+
 **Características:**
 - **Integración LVM**: Integrar local-lvm en local
 - **Auto Redimensionamiento**: Extender automáticamente el volumen root
@@ -59,16 +61,22 @@ Script para configurar la actualización automática DDNS para el servicio DNSZI
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Herramienta de Configuración LVM-Thin ⚠️ **EN PRUEBAS - NO USAR**
-Script para convertir LVM existente a LVM-thin o configurar nueva configuración LVM-thin.
+### 4. Herramienta de Configuración de Tamaño LVM-Thin ⚠️ **EN PRUEBAS - NO USAR**
+Script para redimensionar directorios LVM y LVM-thin después de la instalación de Proxmox.
 
 **⚠️ ADVERTENCIA: Este script está actualmente en pruebas y puede destruir su sistema. ¡NO LO USE!**
 
 **Características:**
-- **Conversión LVM-Thin**: Convertir automáticamente LVM existente a LVM-thin
-- **Nueva Configuración**: Crear nuevo pool y volumen LVM-thin
-- **Respaldo Automático**: Opción para respaldar datos existentes
-- **Detección Inteligente**: Detectar si LVM-thin ya está configurado
+- **Configuración de Tamaño Flexible**: Configuración automática/personalizada/basada en porcentajes
+- **Redimensionamiento de Volumen Root**: Soporte seguro para expansión/reducción
+- **Reconfiguración LVM-Thin**: Recrear volumen de datos existente como LVM-thin
+- **Sobre-aprovisionamiento**: Utilización eficiente del espacio con 95% de sobre-aprovisionamiento
+- **Confirmación Paso a Paso**: Operación segura con confirmación del usuario
+
+**Opciones de Configuración de Tamaño:**
+1. **Automático**: Root 20GB, Data espacio restante
+2. **Personalizado**: Tamaños especificados por el usuario
+3. **Porcentaje**: Root 30%, Data 70%
 
 **Ejecución:**
 ```bash

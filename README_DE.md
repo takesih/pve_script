@@ -35,6 +35,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ### 2. LVM Resize-Tool
 Skript zur Integration von local-lvm in local zur Optimierung des Festplattenspeichers.
 
+**⚠️ Wichtig: Die Verwendung dieses Skripts macht eine Rückgängigmachung schwierig und Snapshot-Backups funktionieren nicht.**
+
 **Funktionen:**
 - **LVM-Integration**: local-lvm in local integrieren
 - **Auto-Resize**: Root-Volume automatisch erweitern
@@ -59,16 +61,22 @@ Skript zur Konfiguration der automatischen DDNS-Aktualisierung für den DNSZI-Se
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin Setup-Tool ⚠️ **IM TEST - NICHT VERWENDEN**
-Skript zur Konvertierung bestehender LVM zu LVM-thin oder zur Einrichtung einer neuen LVM-thin-Konfiguration.
+### 4. LVM-Thin Größenkonfigurations-Tool ⚠️ **IM TEST - NICHT VERWENDEN**
+Skript zur Größenänderung von LVM-Verzeichnissen und LVM-thin nach der Proxmox-Installation.
 
 **⚠️ WARNUNG: Dieses Skript befindet sich derzeit im Test und kann Ihr System zerstören. VERWENDEN SIE ES NICHT!**
 
 **Funktionen:**
-- **LVM-Thin-Konvertierung**: Automatische Konvertierung bestehender LVM zu LVM-thin
-- **Neue Einrichtung**: Erstellen eines neuen LVM-thin-Pools und -Volumens
-- **Automatische Sicherung**: Option zur Sicherung bestehender Daten
-- **Intelligente Erkennung**: Erkennung, ob LVM-thin bereits konfiguriert ist
+- **Flexible Größenkonfiguration**: Automatische/benutzerdefinierte/prozentbasierte Größeneinstellungen
+- **Root-Volume-Größenänderung**: Sichere Unterstützung für Erweiterung/Verkleinerung
+- **LVM-Thin-Rekonfiguration**: Bestehendes Datenvolume als LVM-thin neu erstellen
+- **Über-Bereitstellung**: Effiziente Speichernutzung mit 95% Über-Bereitstellung
+- **Schrittweise Bestätigung**: Sichere Operation mit Benutzerbestätigung
+
+**Größenkonfigurationsoptionen:**
+1. **Automatisch**: Root 20GB, Data verbleibender Speicher
+2. **Benutzerdefiniert**: Vom Benutzer angegebene Größen
+3. **Prozentsatz**: Root 30%, Data 70%
 
 **Ausführung:**
 ```bash
