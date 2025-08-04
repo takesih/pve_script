@@ -18,6 +18,119 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Function to schedule boot-time resize
+schedule_boot_resize() {
+    echo "🔧 Setting up automatic boot-time resize..."
+    
+    # Create the resize script
+    cat > /usr/local/bin/pve-boot-resize.sh << 'EOF'
+#!/bin/bash
+# Proxmox Boot-time Root Filesystem Resize Script
+# This script runs during early boot to resize root filesystem
+
+set -e
+
+# Configuration file
+CONFIG_FILE="/etc/pve-boot-resize.conf"
+
+# Check if resize is needed
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "No resize configuration found, exiting..."
+    exit 0
+fi
+
+# Read configuration
+source "$CONFIG_FILE"
+
+echo "Starting boot-time root filesystem resize..."
+echo "Target size: $TARGET_ROOT_SIZE"
+
+# Remount root as read-only
+echo "Remounting root filesystem as read-only..."
+mount -o remount,ro /
+
+# Check filesystem
+echo "Checking filesystem integrity..."
+e2fsck -f /dev/pve/root
+
+# Resize filesystem
+echo "Resizing filesystem to $TARGET_ROOT_SIZE..."
+resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"
+
+# Resize logical volume
+echo "Resizing logical volume to $TARGET_ROOT_SIZE..."
+lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root
+
+# Remount root as read-write
+echo "Remounting root filesystem as read-write..."
+mount -o remount,rw /
+
+# Remove configuration file to prevent re-running
+rm -f "$CONFIG_FILE"
+
+# Create completion marker
+echo "$(date): Root filesystem resized to $TARGET_ROOT_SIZE" > /var/log/pve-boot-resize.log
+
+echo "Boot-time resize completed successfully!"
+EOF
+
+    chmod +x /usr/local/bin/pve-boot-resize.sh
+    
+    # Create systemd service
+    cat > /etc/systemd/system/pve-boot-resize.service << 'EOF'
+[Unit]
+Description=Proxmox Boot-time Root Filesystem Resize
+DefaultDependencies=false
+After=local-fs-pre.target
+Before=local-fs.target
+RequiresMountsFor=/
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pve-boot-resize.sh
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+    # Create configuration file
+    cat > /etc/pve-boot-resize.conf << EOF
+TARGET_ROOT_SIZE="$ROOT_SIZE_CALC"
+ORIGINAL_SIZE="$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')G"
+CREATED_DATE="$(date)"
+EOF
+
+    # Enable the service
+    systemctl enable pve-boot-resize.service
+    
+    echo "✅ Boot-time resize scheduled successfully!"
+    echo ""
+    echo "📋 What happens next:"
+    echo "1. System will reboot"
+    echo "2. During boot, root filesystem will be resized automatically"
+    echo "3. System will boot normally with resized root volume"
+    echo "4. Re-run this script to create LVM-thin data volume"
+    echo ""
+    echo "🔍 Monitoring:"
+    echo "   - Service status: systemctl status pve-boot-resize.service"
+    echo "   - Resize log: /var/log/pve-boot-resize.log"
+    echo ""
+    
+    read -p "Reboot now to apply resize? (y/N): " reboot_now
+    if [[ "$reboot_now" == "y" || "$reboot_now" == "Y" ]]; then
+        echo "🔄 Rebooting system..."
+        sleep 3
+        reboot
+    else
+        echo "⚠️  Please reboot manually to apply the resize."
+        echo "   After reboot, re-run this script to create LVM-thin data volume."
+        exit 0
+    fi
+}
+
 # Function to check system compatibility
 check_system_compatibility() {
     echo "🔍 Checking system compatibility..."
@@ -51,9 +164,8 @@ check_system_compatibility() {
         SYSTEM_TYPE="standard"
     fi
     echo ""
-}
-
-# Function to get user input for size configuration
+}# Funct
+ion to get user input for size configuration
 get_size_configuration() {
     echo "🔧 LVM Size Configuration"
     echo "Current storage layout:"
@@ -231,37 +343,45 @@ resize_root_volume() {
             echo "⚠️  Proceeding with insufficient space - HIGH RISK!"
         fi
         
-        echo "⚠️  WARNING: Root filesystem shrinking requires offline operation!"
-        echo "   ext4 filesystem cannot be shrunk while mounted"
-        echo ""
-        echo "🔧 Alternative approaches:"
-        echo "   1. Boot from Proxmox rescue/installation media"
-        echo "   2. Use a live Linux USB/CD"
-        echo "   3. Choose a larger root size to avoid shrinking"
-        echo ""
-        echo "� Recommendped: Choose option 2 (Root focused: 30GB) or 4 (Custom) with larger size"
+        echo "🔧 Root filesystem shrinking options:"
+        echo "1. Schedule automatic resize on next boot (Recommended)"
+        echo "2. Manual offline operation (Advanced users)"
+        echo "3. Cancel and choose larger root size"
         echo ""
         
-        read -p "Do you want to continue with offline shrinking? (y/N): " offline_continue
-        if [[ "$offline_continue" != "y" && "$offline_continue" != "Y" ]]; then
-            echo "❌ Operation cancelled. Please restart and choose a larger root size."
-            exit 1
-        fi
+        read -p "Select option (1-3): " shrink_option
         
-        echo ""
-        echo "🚨 CRITICAL: This operation requires system reboot into rescue mode!"
-        echo "📋 Manual steps required:"
-        echo "   1. Boot from Proxmox installation media or live Linux"
-        echo "   2. Activate LVM: vgchange -ay pve"
-        echo "   3. Check filesystem: e2fsck -f /dev/pve/root"
-        echo "   4. Shrink filesystem: resize2fs /dev/pve/root $ROOT_SIZE_CALC"
-        echo "   5. Shrink LV: lvresize -L $ROOT_SIZE_CALC /dev/pve/root"
-        echo "   6. Reboot back to normal system"
-        echo "   7. Re-run this script to create LVM-thin data volume"
-        echo ""
-        echo "❌ Cannot proceed with online root filesystem shrinking."
-        echo "   Please follow the manual steps above or choose a larger root size."
-        exit 1
+        case $shrink_option in
+            1)
+                echo "✅ Scheduling automatic resize on next boot..."
+                schedule_boot_resize
+                return 0
+                ;;
+            2)
+                echo ""
+                echo "🚨 CRITICAL: Manual offline operation required!"
+                echo "📋 Manual steps:"
+                echo "   1. Boot from Proxmox installation media or live Linux"
+                echo "   2. Activate LVM: vgchange -ay pve"
+                echo "   3. Check filesystem: e2fsck -f /dev/pve/root"
+                echo "   4. Shrink filesystem: resize2fs /dev/pve/root $ROOT_SIZE_CALC"
+                echo "   5. Shrink LV: lvresize -L $ROOT_SIZE_CALC /dev/pve/root"
+                echo "   6. Reboot back to normal system"
+                echo "   7. Re-run this script to create LVM-thin data volume"
+                echo ""
+                echo "❌ Cannot proceed with online root filesystem shrinking."
+                exit 1
+                ;;
+            3)
+                echo "❌ Operation cancelled. Please restart and choose a larger root size."
+                exit 1
+                ;;
+            *)
+                echo "❌ Invalid option. Scheduling automatic resize..."
+                schedule_boot_resize
+                return 0
+                ;;
+        esac
         
     elif (( $(echo "$current_root_size < $target_root_size" | bc -l) )); then
         echo "🔄 Expanding root volume from ${current_root_size}G to ${target_root_size}G..."
@@ -374,7 +494,7 @@ echo "📊 Final LVM status:"
 lvs --units g
 
 echo ""
-echo "� NStorage usage:"
+echo "📊 Storage usage:"
 df -h /
 
 echo ""
@@ -390,4 +510,4 @@ echo ""
 echo "📈 Storage Summary:"
 echo "   Root volume: $ROOT_SIZE_CALC (for Proxmox system)"
 echo "   Data volume: LVM-thin pool (for VMs and containers)"
-echo "   Thin provisioning: Enabled (allows over-allocation)" 
+echo "   Thin provisioning: Enabled (allows over-allocation)"
