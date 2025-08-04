@@ -99,6 +99,27 @@ Proxmox 8.4 ISOにRealtek R8168ネットワークカードドライバーを統�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
+### 6. Proxmox VE温度監視ツール
+Proxmox VEダッシュボードにリアルタイムCPUおよびディスク温度監視を追加するスクリプトです。
+
+**機能：**
+- **ハードウェアセンサー検出**：lm-sensorsを使用した自動センサー検出
+- **CPU温度監視**：リアルタイムCPU温度表示
+- **ディスク温度監視**：SMARTデータを使用したディスク温度表示
+- **ダッシュボード統合**：Proxmox Webインターフェースに温度情報表示
+- **自動バックアップ**：変更前の元ファイル自動バックアップ
+- **安全な変更**：Proxmox APIとWebインターフェースの安全な変更
+
+**実行方法：**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
+```
+
+**重要な注意事項：**
+- 物理ハードウェアでのみ動作（仮想マシンには温度センサーなし）
+- Proxmoxシステムファイルを変更（自動バックアップが作成されます）
+- インストール後にWebインターフェースの更新が必要（Ctrl+F5）
+
 ---
 
 <a href='https://ko-fi.com/R6R71ILZQL' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a> 

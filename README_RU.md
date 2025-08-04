@@ -99,6 +99,27 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
+### 6. Инструмент мониторинга температуры Proxmox VE
+Скрипт для добавления мониторинга температуры CPU и дисков в реальном времени на панель Proxmox VE.
+
+**Функции:**
+- **Обнаружение аппаратных датчиков**: Автоматическое обнаружение датчиков с помощью lm-sensors
+- **Мониторинг температуры CPU**: Отображение температуры CPU в реальном времени
+- **Мониторинг температуры дисков**: Отображение температуры дисков через SMART данные
+- **Интеграция с панелью**: Информация о температуре в веб-интерфейсе Proxmox
+- **Автоматическое резервное копирование**: Автоматическое резервное копирование оригинальных файлов
+- **Безопасная модификация**: Безопасная модификация API и веб-интерфейса Proxmox
+
+**Выполнение:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
+```
+
+**Важные замечания:**
+- Работает только на физическом оборудовании (у ВМ нет датчиков температуры)
+- Изменяет системные файлы Proxmox (автоматически создаются резервные копии)
+- Требует обновления веб-интерфейса после установки (Ctrl+F5)
+
 ---
 
 <a href='https://ko-fi.com/R6R71ILZQL' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a> 

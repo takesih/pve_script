@@ -99,6 +99,27 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
+### 6. Proxmox VE温度监控工具
+向Proxmox VE仪表板添加实时CPU和磁盘温度监控的脚本。
+
+**功能：**
+- **硬件传感器检测**：使用lm-sensors自动检测传感器
+- **CPU温度监控**：实时CPU温度显示
+- **磁盘温度监控**：使用SMART数据显示磁盘温度
+- **仪表板集成**：在Proxmox Web界面中显示温度信息
+- **自动备份**：修改前自动备份原始文件
+- **安全修改**：安全修改Proxmox API和Web界面
+
+**执行方法：**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
+```
+
+**重要说明：**
+- 仅在物理硬件上工作（虚拟机没有温度传感器）
+- 修改Proxmox系统文件（自动创建备份）
+- 安装后需要刷新Web界面（Ctrl+F5）
+
 ---
 
 <a href='https://ko-fi.com/R6R71ILZQL' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a> 

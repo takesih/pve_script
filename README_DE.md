@@ -99,6 +99,27 @@ Skript zur Integration des Realtek R8168 Netzwerkadapter-Treibers in das Proxmox
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
+### 6. Proxmox VE Temperaturüberwachungs-Tool
+Skript zum Hinzufügen von Echtzeit-CPU- und Festplatten-Temperaturüberwachung zum Proxmox VE Dashboard.
+
+**Funktionen:**
+- **Hardware-Sensor-Erkennung**: Automatische Sensor-Erkennung mit lm-sensors
+- **CPU-Temperaturüberwachung**: Echtzeit-CPU-Temperaturanzeige
+- **Festplatten-Temperaturüberwachung**: Festplattentemperatur-Anzeige über SMART-Daten
+- **Dashboard-Integration**: Temperaturinformationen in Proxmox Web-Interface
+- **Automatische Sicherung**: Automatische Sicherung der Originaldateien vor Änderung
+- **Sichere Änderung**: Sichere Änderung der Proxmox API und Web-Interface
+
+**Ausführung:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
+```
+
+**Wichtige Hinweise:**
+- Funktioniert nur auf physischer Hardware (VMs haben keine Temperatursensoren)
+- Ändert Proxmox-Systemdateien (automatische Backups werden erstellt)
+- Erfordert Web-Interface-Aktualisierung nach Installation (Ctrl+F5)
+
 ---
 
 <a href='https://ko-fi.com/R6R71ILZQL' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a> 

@@ -99,6 +99,27 @@ Proxmox 8.4 ISO에 Realtek R8168 랜카드 드라이버를 통합하는 스크�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
+### 6. Proxmox VE 온도 모니터링 도구
+Proxmox VE 대시보드에 실시간 CPU 및 디스크 온도 모니터링을 추가하는 스크립트입니다.
+
+**기능:**
+- **하드웨어 센서 감지**: lm-sensors를 이용한 자동 센서 감지
+- **CPU 온도 모니터링**: 실시간 CPU 온도 표시
+- **디스크 온도 모니터링**: SMART 데이터를 이용한 디스크 온도 표시
+- **대시보드 통합**: Proxmox 웹 인터페이스에 온도 정보 표시
+- **자동 백업**: 수정 전 원본 파일 자동 백업
+- **안전한 수정**: Proxmox API 및 웹 인터페이스 안전하게 수정
+
+**실행 방법:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
+```
+
+**주의사항:**
+- 물리적 하드웨어에서만 작동 (가상머신에서는 센서 없음)
+- Proxmox 시스템 파일을 수정하므로 백업이 자동 생성됨
+- 설치 후 웹 인터페이스 새로고침 필요 (Ctrl+F5)
+
 ---
 
 <a href='https://ko-fi.com/R6R71ILZQL' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
