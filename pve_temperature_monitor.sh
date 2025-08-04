@@ -2,8 +2,9 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
+# Version: 2025-01-08
+# Author: Proxmox Temperature Monitor Tool
 
-# 2025-08-04
 set -e
 
 echo "=============================="
@@ -17,6 +18,61 @@ if [[ $EUID -ne 0 ]]; then
    echo "sudo ./pve_temperature_monitor.sh"
    exit 1
 fi
+
+# Function to show operation menu
+show_menu() {
+    echo ""
+    echo "🔧 Select operation:"
+    echo "1) Install temperature monitoring (new installation)"
+    echo "2) Repair/Update temperature monitoring (fix existing installation)"
+    echo "3) Remove temperature monitoring (restore original files)"
+    echo "4) Test current temperature monitoring"
+    echo "5) Exit"
+    echo ""
+}
+
+# Function to handle Proxmox repository issues
+fix_proxmox_repositories() {
+    echo "🔧 Checking Proxmox repositories..."
+    
+    # Check if enterprise repositories are causing issues
+    if grep -q "enterprise.proxmox.com" /etc/apt/sources.list.d/pve-enterprise.list 2>/dev/null; then
+        echo "⚠️  Enterprise repository detected but may not be accessible"
+        echo "🔧 Temporarily disabling enterprise repositories for package installation..."
+        
+        # Backup original repository files
+        cp /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sources.list.d/pve-enterprise.list.bak 2>/dev/null || true
+        cp /etc/apt/sources.list.d/ceph.list /etc/apt/sources.list.d/ceph.list.bak 2>/dev/null || true
+        
+        # Comment out enterprise repositories
+        sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list 2>/dev/null || true
+        sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/ceph.list 2>/dev/null || true
+        
+        # Add no-subscription repository if not present
+        if ! grep -q "pve-no-subscription" /etc/apt/sources.list.d/pve-no-subscription.list 2>/dev/null; then
+            echo "📦 Adding no-subscription repository..."
+            echo "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" > /etc/apt/sources.list.d/pve-no-subscription.list
+        fi
+        
+        echo "✅ Repository configuration updated for package installation"
+    fi
+}
+
+# Function to restore repositories
+restore_repositories() {
+    echo "🔧 Restoring original repository configuration..."
+    
+    # Restore enterprise repositories if backups exist
+    if [ -f /etc/apt/sources.list.d/pve-enterprise.list.bak ]; then
+        mv /etc/apt/sources.list.d/pve-enterprise.list.bak /etc/apt/sources.list.d/pve-enterprise.list
+        echo "✅ Enterprise repository restored"
+    fi
+    
+    if [ -f /etc/apt/sources.list.d/ceph.list.bak ]; then
+        mv /etc/apt/sources.list.d/ceph.list.bak /etc/apt/sources.list.d/ceph.list
+        echo "✅ Ceph repository restored"
+    fi
+}
 
 # Function to check required packages
 check_required_packages() {
@@ -36,9 +92,25 @@ check_required_packages() {
     
     if [ ${#missing_packages[@]} -gt 0 ]; then
         echo "📦 Installing missing packages: ${missing_packages[*]}"
-        apt-get update
-        apt-get install -y "${missing_packages[@]}"
-        echo "✅ Required packages installed successfully"
+        
+        # Fix repository issues before package installation
+        fix_proxmox_repositories
+        
+        # Update package list with error handling
+        echo "🔄 Updating package lists..."
+        if ! apt-get update 2>/dev/null; then
+            echo "⚠️  Package list update had some warnings, but continuing..."
+        fi
+        
+        # Install packages with error handling
+        if apt-get install -y "${missing_packages[@]}" 2>/dev/null; then
+            echo "✅ Required packages installed successfully"
+        else
+            echo "⚠️  Some packages may have installation warnings, but continuing..."
+        fi
+        
+        # Restore repositories
+        restore_repositories
     else
         echo "✅ All required packages are already installed"
     fi
@@ -313,63 +385,213 @@ EOF
     echo "✅ Temperature monitoring script created"
 }
 
+# Function to remove temperature monitoring
+remove_temperature_monitoring() {
+    echo "🗑️  Removing temperature monitoring..."
+    
+    # Find the most recent backup
+    local backup_dir=$(ls -td /root/pve_temperature_backup_* 2>/dev/null | head -1)
+    
+    if [ -z "$backup_dir" ]; then
+        echo "❌ No backup directory found. Cannot safely remove modifications."
+        echo "   Manual restoration required."
+        return 1
+    fi
+    
+    echo "📁 Using backup from: $backup_dir"
+    
+    # Restore original files
+    if [ -f "$backup_dir/Nodes.pm" ]; then
+        cp "$backup_dir/Nodes.pm" "/usr/share/perl5/PVE/API2/Nodes.pm"
+        echo "✅ Restored Nodes.pm"
+    fi
+    
+    if [ -f "$backup_dir/pvemanagerlib.js" ]; then
+        cp "$backup_dir/pvemanagerlib.js" "/usr/share/pve-manager/js/pvemanagerlib.js"
+        echo "✅ Restored pvemanagerlib.js"
+    fi
+    
+    # Remove monitoring script
+    if [ -f "/usr/local/bin/pve-temp-monitor" ]; then
+        rm -f "/usr/local/bin/pve-temp-monitor"
+        echo "✅ Removed temperature monitoring script"
+    fi
+    
+    # Restart services
+    restart_services
+    
+    echo "✅ Temperature monitoring removed successfully"
+    echo "💡 Refresh your Proxmox web interface to see changes"
+}
+
 # Function to test temperature monitoring
 test_temperature_monitoring() {
     echo "🧪 Testing temperature monitoring..."
     
+    # Test if monitoring script exists
+    if [ ! -f "/usr/local/bin/pve-temp-monitor" ]; then
+        echo "❌ Temperature monitoring script not found"
+        echo "   Run installation first"
+        return 1
+    fi
+    
     echo "📊 Current temperatures:"
-    /usr/local/bin/pve-temp-monitor all
+    /usr/local/bin/pve-temp-monitor all 2>/dev/null || echo "❌ Temperature monitoring script failed"
     
     echo ""
-    echo "🔍 Sensor output:"
-    sensors 2>/dev/null || echo "No sensors output available"
+    echo "🔍 Raw sensor output:"
+    if command -v sensors >/dev/null 2>&1; then
+        sensors 2>/dev/null || echo "❌ No sensors output available"
+    else
+        echo "❌ lm-sensors not installed"
+    fi
     
     echo ""
+    echo "🔍 Smart disk temperatures:"
+    if command -v smartctl >/dev/null 2>&1; then
+        for disk in /dev/sd[a-z] /dev/nvme[0-9]*; do
+            if [ -b "$disk" ]; then
+                echo -n "$disk: "
+                smartctl -A "$disk" 2>/dev/null | grep -i temperature | awk '{print $10"°C"}' | head -1 || echo "N/A"
+            fi
+        done
+    else
+        echo "❌ smartmontools not installed"
+    fi
+    
+    echo ""
+    echo "🔍 Checking Proxmox modifications:"
+    if grep -q "thermal-state" "/usr/share/perl5/PVE/API2/Nodes.pm" 2>/dev/null; then
+        echo "✅ API modifications present"
+    else
+        echo "❌ API modifications missing"
+    fi
+    
+    if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
+        echo "✅ Web interface modifications present"
+    else
+        echo "❌ Web interface modifications missing"
+    fi
+}
+
+# Function to install temperature monitoring
+install_temperature_monitoring() {
+    echo ""
+    echo "🚀 Starting temperature monitoring installation..."
+    echo ""
+    echo "⚠️  Important Notes:"
+    echo "1. This will modify Proxmox VE system files"
+    echo "2. Backups will be created automatically"
+    echo "3. Proxmox services will be restarted"
+    echo "4. Temperature sensors must be supported by your hardware"
+    echo "5. Virtual machines may not have temperature sensors"
+    echo ""
+    
+    read -p "Continue with temperature monitoring installation? (y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "❌ Installation cancelled."
+        return 1
+    fi
+    
+    # Execute setup steps
+    check_required_packages
+    detect_sensors
+    backup_files
+    modify_proxmox_api
+    modify_web_interface
+    create_monitoring_script
+    restart_services
+    test_temperature_monitoring
+    
+    echo ""
+    echo "✅ Temperature monitoring installation completed!"
+    echo ""
+    echo "💡 Next steps:"
+    echo "1. Refresh your Proxmox web interface (Ctrl+F5)"
+    echo "2. Navigate to a node's summary page"
+    echo "3. Temperature information should now be displayed"
+    echo "4. If temperatures don't appear, check hardware sensor support"
+    echo ""
+    echo "🔧 Troubleshooting:"
+    echo "   - Test sensors: sensors"
+    echo "   - Test script: /usr/local/bin/pve-temp-monitor all"
+    echo "   - Check logs: journalctl -u pveproxy -u pvedaemon"
+    echo ""
+    echo "📁 Backups are stored in: /root/pve_temperature_backup_*"
+    echo ""
+    echo "🎉 Temperature monitoring is now active in your Proxmox dashboard!"
+}
+
+# Function to repair temperature monitoring
+repair_temperature_monitoring() {
+    echo ""
+    echo "🔧 Starting temperature monitoring repair/update..."
+    echo ""
+    echo "⚠️  This will:"
+    echo "1. Re-apply temperature monitoring modifications"
+    echo "2. Update monitoring scripts"
+    echo "3. Restart Proxmox services"
+    echo "4. Test functionality"
+    echo ""
+    
+    read -p "Continue with repair/update? (y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "❌ Repair cancelled."
+        return 1
+    fi
+    
+    # Execute repair steps (similar to install but skip package check)
+    detect_sensors
+    backup_files
+    modify_proxmox_api
+    modify_web_interface
+    create_monitoring_script
+    restart_services
+    test_temperature_monitoring
+    
+    echo ""
+    echo "✅ Temperature monitoring repair completed!"
+    echo "💡 Refresh your Proxmox web interface to see changes"
 }
 
 # Main execution
 echo "📊 Checking current system status..."
 echo "Proxmox VE version: $(pveversion | head -1)"
-echo ""
 
-echo "⚠️  Important Notes:"
-echo "1. This will modify Proxmox VE system files"
-echo "2. Backups will be created automatically"
-echo "3. Proxmox services will be restarted"
-echo "4. Temperature sensors must be supported by your hardware"
-echo "5. Virtual machines may not have temperature sensors"
-echo ""
-
-read -p "Continue with temperature monitoring setup? (y/N): " confirm
-if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-    echo "❌ Operation cancelled."
-    exit 1
+# Check if temperature monitoring is already installed
+if grep -q "thermal-state" "/usr/share/perl5/PVE/API2/Nodes.pm" 2>/dev/null; then
+    echo "🔍 Status: Temperature monitoring appears to be installed"
+else
+    echo "🔍 Status: Temperature monitoring not detected"
 fi
 
-# Execute setup steps
-check_required_packages
-detect_sensors
-backup_files
-modify_proxmox_api
-modify_web_interface
-create_monitoring_script
-restart_services
-test_temperature_monitoring
-
-echo ""
-echo "✅ Temperature monitoring setup completed!"
-echo ""
-echo "💡 Next steps:"
-echo "1. Refresh your Proxmox web interface (Ctrl+F5)"
-echo "2. Navigate to a node's summary page"
-echo "3. Temperature information should now be displayed"
-echo "4. If temperatures don't appear, check hardware sensor support"
-echo ""
-echo "🔧 Troubleshooting:"
-echo "   - Test sensors: sensors"
-echo "   - Test script: /usr/local/bin/pve-temp-monitor all"
-echo "   - Check logs: journalctl -u pveproxy -u pvedaemon"
-echo ""
-echo "📁 Backups are stored in: /root/pve_temperature_backup_*"
-echo ""
-echo "🎉 Temperature monitoring is now active in your Proxmox dashboard!"
+# Main menu loop
+while true; do
+    show_menu
+    read -p "Select option (1-5): " choice
+    
+    case $choice in
+        1)
+            install_temperature_monitoring
+            ;;
+        2)
+            repair_temperature_monitoring
+            ;;
+        3)
+            remove_temperature_monitoring
+            ;;
+        4)
+            test_temperature_monitoring
+            ;;
+        5)
+            echo "👋 Goodbye!"
+            exit 0
+            ;;
+        *)
+            echo "❌ Invalid option. Please select 1-5."
+            ;;
+    esac
+    
+    echo ""
+    read -p "Press Enter to continue..."
+done
