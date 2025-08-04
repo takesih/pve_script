@@ -164,8 +164,9 @@ check_system_compatibility() {
         SYSTEM_TYPE="standard"
     fi
     echo ""
-}# Funct
-ion to get user input for size configuration
+}
+
+# Function to get user input for size configuration
 get_size_configuration() {
     echo "🔧 LVM Size Configuration"
     echo "Current storage layout:"
