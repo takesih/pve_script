@@ -4,7 +4,7 @@
 # Script to extend LVM volumes after disk expansion with automatic PE boot
 # Designed for remote systems without user intervention
 # Based on Proxmox forum: https://forum.proxmox.com/threads/extend-local-lvm-proxmox.133478/#post-589215
-# Version: 2025-01-08
+# Version: 2025-01-08 054715
 # Author: Proxmox LVM Management Tool
 
 set -e
@@ -216,7 +216,7 @@ prepare_linux_pe() {
     
     # Download Tiny Core Linux (smallest available - ~16MB)
     echo "📥 Downloading Tiny Core Linux..."
-    wget -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCore-12.0.iso"
+    wget -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
     
     # Mount ISO and extract kernel and initrd
     echo "🔧 Extracting PE components..."
