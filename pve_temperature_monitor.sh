@@ -355,13 +355,43 @@ modify_web_interface() {
     
     echo "🔍 Finding node summary section for temperature integration..."
     
+    # Create detailed debug log
+    local debug_log="/var/log/pve-temperature-debug.log"
+    echo "=== Proxmox Temperature Monitor Debug Log ===" > "$debug_log"
+    echo "Date: $(date)" >> "$debug_log"
+    echo "File: $pvemanager_js" >> "$debug_log"
+    echo "File size: $(wc -l < "$pvemanager_js") lines" >> "$debug_log"
+    echo "" >> "$debug_log"
+    
+    # Log file structure analysis
+    echo "=== File Structure Analysis ===" >> "$debug_log"
+    echo "Lines containing 'CPU':" >> "$debug_log"
+    grep -n -i "cpu" "$pvemanager_js" | head -20 >> "$debug_log"
+    echo "" >> "$debug_log"
+    
+    echo "Lines containing 'items.push':" >> "$debug_log"
+    grep -n "items\.push" "$pvemanager_js" | head -20 >> "$debug_log"
+    echo "" >> "$debug_log"
+    
+    echo "Lines containing 'title.*gettext':" >> "$debug_log"
+    grep -n "title.*gettext" "$pvemanager_js" | head -20 >> "$debug_log"
+    echo "" >> "$debug_log"
+    
+    echo "Lines containing 'itemId':" >> "$debug_log"
+    grep -n "itemId" "$pvemanager_js" | head -20 >> "$debug_log"
+    echo "" >> "$debug_log"
+    
     # Look for the node status items section where CPU, Memory info is displayed
     # We need to find where items are pushed to the status display
     local cpu_line=$(grep -n "title.*gettext.*CPU" "$pvemanager_js" | head -1 | cut -d: -f1)
     
+    echo "=== Search Results ===" >> "$debug_log"
+    echo "CPU line search result: $cpu_line" >> "$debug_log"
+    
     if [ -z "$cpu_line" ]; then
         # Try alternative patterns
         cpu_line=$(grep -n "itemId.*cpu\|CPU usage" "$pvemanager_js" | head -1 | cut -d: -f1)
+        echo "Alternative CPU search result: $cpu_line" >> "$debug_log"
     fi
     
     if [ -z "$cpu_line" ]; then
@@ -370,16 +400,43 @@ modify_web_interface() {
         
         # Look for any items.push pattern in the file
         local push_line=$(grep -n "items\.push" "$pvemanager_js" | tail -1 | cut -d: -f1)
+        echo "Items.push search result: $push_line" >> "$debug_log"
+        
         if [ -n "$push_line" ]; then
             echo "🔍 Found items.push at line $push_line, using as insertion point"
             cpu_line=$push_line
         else
             echo "❌ No suitable insertion point found"
+            echo "ERROR: No insertion point found" >> "$debug_log"
+            
+            # Log more context for debugging
+            echo "" >> "$debug_log"
+            echo "=== Context Analysis ===" >> "$debug_log"
+            echo "Lines 1-50:" >> "$debug_log"
+            head -50 "$pvemanager_js" >> "$debug_log"
+            echo "" >> "$debug_log"
+            echo "Lines around middle:" >> "$debug_log"
+            local middle_line=$(($(wc -l < "$pvemanager_js") / 2))
+            sed -n "$((middle_line - 25)),$((middle_line + 25))p" "$pvemanager_js" >> "$debug_log"
+            echo "" >> "$debug_log"
+            echo "Last 50 lines:" >> "$debug_log"
+            tail -50 "$pvemanager_js" >> "$debug_log"
+            
+            echo "🔍 Debug log created: $debug_log"
+            echo "📋 Please share this log to help identify the correct insertion point"
             return 1
         fi
     fi
     
     echo "🔍 Found insertion point at line $cpu_line"
+    
+    # Log context around insertion point
+    echo "" >> "$debug_log"
+    echo "=== Insertion Point Context ===" >> "$debug_log"
+    echo "Selected line: $cpu_line" >> "$debug_log"
+    echo "Context (lines $((cpu_line - 10)) to $((cpu_line + 10))):" >> "$debug_log"
+    sed -n "$((cpu_line - 10)),$((cpu_line + 10))p" "$pvemanager_js" >> "$debug_log"
+    echo "" >> "$debug_log"
     
     # Create temperature display code that matches Proxmox's existing pattern
     cat > /tmp/temperature_display.js << 'EOF'
@@ -460,30 +517,80 @@ EOF
     if [ -n "$actual_insert" ] && [ "$actual_insert" -gt 0 ]; then
         echo "🔍 Inserting temperature code after line $actual_insert"
         
+        # Log the insertion process
+        echo "=== Insertion Process ===" >> "$debug_log"
+        echo "Final insertion line: $actual_insert" >> "$debug_log"
+        echo "Context before insertion:" >> "$debug_log"
+        sed -n "$((actual_insert - 5)),$((actual_insert + 5))p" "$pvemanager_js" >> "$debug_log"
+        echo "" >> "$debug_log"
+        echo "Code to be inserted:" >> "$debug_log"
+        cat /tmp/temperature_display.js >> "$debug_log"
+        echo "" >> "$debug_log"
+        
         # Create the modified file
         head -n $actual_insert "$pvemanager_js" > /tmp/pvemanager_js_new
         cat /tmp/temperature_display.js >> /tmp/pvemanager_js_new
         tail -n +$((actual_insert + 1)) "$pvemanager_js" >> /tmp/pvemanager_js_new
         
+        # Log the result
+        echo "Modified file size: $(wc -l < /tmp/pvemanager_js_new) lines" >> "$debug_log"
+        echo "Context after insertion:" >> "$debug_log"
+        sed -n "$((actual_insert - 5)),$((actual_insert + 15))p" /tmp/pvemanager_js_new >> "$debug_log"
+        echo "" >> "$debug_log"
+        
         # Verify the file is valid (basic check)
         if [ -s /tmp/pvemanager_js_new ]; then
+            # Additional syntax validation
+            echo "=== Syntax Validation ===" >> "$debug_log"
+            
+            # Check for common JavaScript syntax issues
+            local syntax_errors=""
+            
+            # Check for unmatched braces around insertion point
+            local before_braces=$(sed -n "1,$actual_insert p" /tmp/pvemanager_js_new | grep -o '{' | wc -l)
+            local before_close_braces=$(sed -n "1,$actual_insert p" /tmp/pvemanager_js_new | grep -o '}' | wc -l)
+            local after_braces=$(sed -n "$((actual_insert + 1)),$ p" /tmp/pvemanager_js_new | grep -o '{' | wc -l)
+            local after_close_braces=$(sed -n "$((actual_insert + 1)),$ p" /tmp/pvemanager_js_new | grep -o '}' | wc -l)
+            
+            echo "Brace count before insertion: { = $before_braces, } = $before_close_braces" >> "$debug_log"
+            echo "Brace count after insertion: { = $after_braces, } = $after_close_braces" >> "$debug_log"
+            
+            # Check for syntax issues in the inserted area
+            local insert_area=$(sed -n "$((actual_insert - 2)),$((actual_insert + 20))p" /tmp/pvemanager_js_new)
+            if echo "$insert_area" | grep -q "&&.*{"; then
+                syntax_errors="Potential '&&' syntax issue detected"
+                echo "WARNING: $syntax_errors" >> "$debug_log"
+            fi
+            
+            if [ -n "$syntax_errors" ]; then
+                echo "❌ Syntax validation failed: $syntax_errors"
+                echo "🔍 Check debug log: $debug_log"
+                rm -f /tmp/pvemanager_js_new /tmp/temperature_display.js
+                return 1
+            fi
+            
             # Replace the original file
             mv /tmp/pvemanager_js_new "$pvemanager_js"
             rm -f /tmp/temperature_display.js
             
             echo "✅ Web interface modified successfully"
             echo "🌡️  Temperature will now appear in node summary page"
+            echo "SUCCESS: File modified successfully" >> "$debug_log"
         else
             echo "❌ Generated file is empty, aborting modification"
+            echo "ERROR: Generated file is empty" >> "$debug_log"
             rm -f /tmp/pvemanager_js_new /tmp/temperature_display.js
             return 1
         fi
     else
         echo "❌ Could not find any safe insertion point"
         echo "🔧 Creating alternative temperature display method..."
+        echo "ERROR: No safe insertion point found" >> "$debug_log"
         create_alternative_temperature_display
         return 1
     fi
+    
+    echo "🔍 Debug log saved: $debug_log"
 }
 
 # Function to create alternative temperature display
@@ -803,6 +910,18 @@ test_temperature_monitoring() {
         echo "❌ Web interface modifications missing"
         echo "⚠️  Temperature will not appear in web interface"
     fi
+    
+    # Show debug log information if available
+    if [ -f "/var/log/pve-temperature-debug.log" ]; then
+        echo ""
+        echo "🔍 Debug information available:"
+        echo "   Debug log: /var/log/pve-temperature-debug.log"
+        echo "   Last modification: $(stat -c %y /var/log/pve-temperature-debug.log 2>/dev/null || echo 'Unknown')"
+        echo "   Log size: $(wc -l < /var/log/pve-temperature-debug.log 2>/dev/null || echo '0') lines"
+        echo ""
+        echo "📋 To help with troubleshooting, you can share:"
+        echo "   cat /var/log/pve-temperature-debug.log"
+    fi
 }
 
 # Function to install temperature monitoring
@@ -862,6 +981,17 @@ install_temperature_monitoring() {
     echo "   - Test sensors: sensors"
     echo "   - Test script: /usr/local/bin/pve-temp-monitor all"
     echo "   - Check logs: journalctl -u pveproxy -u pvedaemon"
+    
+    # Show debug log if available
+    if [ -f "/var/log/pve-temperature-debug.log" ]; then
+        echo "   - Debug log: /var/log/pve-temperature-debug.log"
+        echo ""
+        echo "🔍 If you encounter JavaScript errors in the browser:"
+        echo "   1. Check the debug log: cat /var/log/pve-temperature-debug.log"
+        echo "   2. Share the log content for assistance"
+        echo "   3. The log contains file analysis and insertion details"
+    fi
+    
     echo ""
     echo "📁 Backups are stored in: /root/pve_temperature_backup_*"
     echo ""
