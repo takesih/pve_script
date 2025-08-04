@@ -888,15 +888,45 @@ create_monitoring_script() {
 
 # Get CPU temperature
 get_cpu_temp() {
+    local temp=""
+    
+    # Method 1: lm-sensors
     if command -v sensors >/dev/null 2>&1; then
-        sensors 2>/dev/null | grep -E "(Core|CPU|Tctl)" | grep -oE '\+[0-9]+\.[0-9]+°C' | head -1 | tr -d '+°C'
+        temp=$(sensors 2>/dev/null | grep -E "(Core|CPU|Tctl)" | grep -oE '\+[0-9]+\.[0-9]+°C' | head -1 | tr -d '+°C')
+        if [[ "$temp" =~ ^[0-9]+$ ]] && [ "$temp" -gt 0 ]; then
+            echo "$temp"
+            return 0
+        fi
     fi
+    
+    # Method 2: /sys/class/thermal
+    if [ -d "/sys/class/thermal" ]; then
+        for zone in /sys/class/thermal/thermal_zone*/temp; do
+            if [ -f "$zone" ]; then
+                temp=$(cat "$zone" 2>/dev/null)
+                if [[ "$temp" =~ ^[0-9]+$ ]] && [ "$temp" -gt 0 ]; then
+                    echo $((temp / 1000))
+                    return 0
+                fi
+            fi
+        done
+    fi
+    
+    # Method 3: /proc/cpuinfo (fallback)
+    temp=$(cat /proc/cpuinfo 2>/dev/null | grep -i "cpu temp\|thermal" | head -1 | awk '{print $NF}' | sed 's/[^0-9]//g')
+    if [[ "$temp" =~ ^[0-9]+$ ]] && [ "$temp" -gt 0 ]; then
+        echo "$temp"
+        return 0
+    fi
+    
+    echo "N/A"
 }
 
 # Get disk temperature
 get_disk_temp() {
+    local max_temp=0
+    
     if command -v smartctl >/dev/null 2>&1; then
-        local max_temp=0
         for disk in /dev/sd* /dev/nvme*; do
             if [ -b "$disk" ]; then
                 local temp=$(smartctl -A "$disk" 2>/dev/null | grep -i temperature | awk '{print $10}' | head -1)
@@ -905,8 +935,13 @@ get_disk_temp() {
                 fi
             fi
         done
-        [ "$max_temp" -gt 0 ] && echo "$max_temp"
+        if [ "$max_temp" -gt 0 ]; then
+            echo "$max_temp"
+            return 0
+        fi
     fi
+    
+    echo "N/A"
 }
 
 # Main execution
