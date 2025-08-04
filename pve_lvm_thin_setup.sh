@@ -272,7 +272,7 @@ log_message "Resize completed. New size: ${new_size}G"
 rm -f "$CONFIG_FILE"
 
 # Create LVM-thin data volume if this was a pve_lvm_resize.sh system
-if [[ -n "$CREATE_DATA_VOLUME"&& "$CREATE_DATA_VOLUME"== "true"]]; then
+    if [[ -n "$CREATE_DATA_VOLUME" && "$CREATE_DATA_VOLUME" == "true" ]]; then
     log_message "Creating LVM-thin data volume for pve_lvm_resize.sh system..."
     
     # Wait a bit for LVM to settle after resize
@@ -446,7 +446,7 @@ EOF
     echo ""
     
     # For pve_lvm_resize.sh systems, automatically reboot
-    if [[ "$PVE_LVM_RESIZE_DETECTED"== "true"]]; then
+    if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
         echo "🔄 Automatically rebooting system for pve_lvm_resize.sh recovery..."
         echo "  System will reboot in 10 seconds..."
         echo "  After reboot, the system will be fully configured with LVM-thin."
@@ -454,8 +454,8 @@ EOF
         reboot
     else
         # For other systems, ask for confirmation
-        read -p "Reboot now to apply resize (y/N): "reboot_now
-        if [[ "$reboot_now"== "y"|| "$reboot_now"== "Y"]]; then
+        read -p "Reboot now to apply resize (y/N): " reboot_now
+        if [[ "$reboot_now" == "y" || "$reboot_now" == "Y" ]]; then
             echo "🔄 Rebooting system..."
             sleep 3
             reboot
@@ -643,7 +643,7 @@ get_size_configuration() {
     echo ""
     
     # Provide different options based on system type
-    if [[ "$PVE_LVM_RESIZE_DETECTED"== "true"]]; then
+    if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
         # Special handling for pve_lvm_resize.sh systems - use safe automatic defaults
         current_usage=$(df / | awk 'NR==2 {print $3}')
         current_usage_gb=$(echo "scale=0; $current_usage / 1024 / 1024 + 8"| bc)  # Add 8GB buffer for safety
@@ -665,7 +665,7 @@ get_size_configuration() {
         ROOT_SIZE="${current_usage_gb}G"
         DATA_SIZE="remaining"
         echo "Auto-selected: Root ${current_usage_gb}GB, Data remaining space (LVM-thin)"
-    elif [[ "$SYSTEM_TYPE"== "post_resize"|| "$SYSTEM_TYPE"== "limited_space"]]; then
+    elif [[ "$SYSTEM_TYPE" == "post_resize" || "$SYSTEM_TYPE" == "limited_space" ]]; then
         # Calculate safe minimum size based on current usage
         current_usage=$(df / | awk 'NR==2 {print $3}')
         current_usage_gb=$(echo "scale=0; $current_usage / 1024 / 1024 + 5"| bc)  # Add 5GB buffer
@@ -822,7 +822,7 @@ resize_root_volume() {
         fi
         
         # For pve_lvm_resize.sh systems, automatically schedule boot resize
-        if [[ "$PVE_LVM_RESIZE_DETECTED"== "true"]]; then
+        if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
             echo "Automatically scheduling boot-time resize for pve_lvm_resize.sh system..."
             echo "  This is required for remote systems without console access."
             schedule_boot_resize
@@ -1086,7 +1086,7 @@ echo "6. This script works with systems that used pve_lvm_resize.sh."
 echo "7. Root volume will be safely shrunk if needed to create data volume."
 
 # Special handling for pve_lvm_resize.sh systems
-if [[ "$PVE_LVM_RESIZE_DETECTED"== "true"]]; then
+if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
     echo ""
     echo "DETECTED: pve_lvm_resize.sh system"
     echo "  This system will be automatically configured for remote operation."
@@ -1104,8 +1104,8 @@ fi
 
 echo ""
 
-read -p "Continue with LVM resize operation (y/N): "confirm
-if [[ "$confirm"!= "y"&& "$confirm"!= "Y"]]; then
+read -p "Continue with LVM resize operation (y/N): " confirm
+if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "Operation cancelled."
     exit 1
 fi
@@ -1128,8 +1128,8 @@ echo "  Root volume will be resized to: $ROOT_SIZE_CALC"
 echo "  Data volume will be created as: $DATA_SIZE_CALC (LVM-thin)"
 echo ""
 
-read -p "Proceed with these settings (y/N): "final_confirm
-if [[ "$final_confirm"!= "y"&& "$final_confirm"!= "Y"]]; then
+read -p "Proceed with these settings (y/N): " final_confirm
+if [[ "$final_confirm" != "y" && "$final_confirm" != "Y" ]]; then
     echo "Operation cancelled."
     exit 1
 fi
