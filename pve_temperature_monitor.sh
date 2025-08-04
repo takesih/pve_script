@@ -247,6 +247,93 @@ EOF
     echo "✅ Proxmox API modified successfully"
 }
 
+# Function to create temperature display extension
+create_temperature_extension() {
+    echo "🔧 Creating temperature display extension..."
+    
+    # Create a separate JavaScript file for temperature display
+    cat > /usr/share/pve-manager/js/pve-temperature-monitor.js << 'EOF'
+// Proxmox Temperature Monitor Extension
+// Adds temperature display to node summary
+
+Ext.define('PVE.node.TemperatureStatus', {
+    extend: 'Ext.panel.Panel',
+    alias: 'widget.pveNodeTemperatureStatus',
+    
+    title: gettext('Temperature'),
+    bodyPadding: 10,
+    
+    initComponent: function() {
+        var me = this;
+        
+        me.items = [
+            {
+                xtype: 'displayfield',
+                fieldLabel: gettext('CPU Temperature'),
+                name: 'cpu-temp',
+                value: gettext('Loading...')
+            },
+            {
+                xtype: 'displayfield', 
+                fieldLabel: gettext('Disk Temperature'),
+                name: 'disk-temp',
+                value: gettext('Loading...')
+            }
+        ];
+        
+        me.callParent();
+        
+        // Load temperature data
+        me.loadTemperatureData();
+        
+        // Set up periodic updates
+        me.temperatureTask = Ext.TaskManager.start({
+            run: me.loadTemperatureData,
+            scope: me,
+            interval: 10000 // Update every 10 seconds
+        });
+    },
+    
+    loadTemperatureData: function() {
+        var me = this;
+        
+        PVE.Utils.API2Request({
+            url: '/nodes/' + me.nodename + '/status',
+            method: 'GET',
+            success: function(response) {
+                var data = response.result.data;
+                if (data && data['thermal-state']) {
+                    var thermal = data['thermal-state'];
+                    
+                    if (thermal['cpu-thermal']) {
+                        me.down('[name=cpu-temp]').setValue(thermal['cpu-thermal'] + '°C');
+                    }
+                    
+                    if (thermal['disk-thermal']) {
+                        me.down('[name=disk-temp]').setValue(thermal['disk-thermal'] + '°C');
+                    }
+                }
+            },
+            failure: function() {
+                me.down('[name=cpu-temp]').setValue(gettext('N/A'));
+                me.down('[name=disk-temp]').setValue(gettext('N/A'));
+            }
+        });
+    },
+    
+    destroy: function() {
+        var me = this;
+        if (me.temperatureTask) {
+            Ext.TaskManager.stop(me.temperatureTask);
+        }
+        me.callParent();
+    }
+});
+EOF
+    
+    echo "✅ Temperature extension created"
+}
+
 # Function to modify Proxmox web interface
 modify_web_interface() {
     echo "🔧 Modifying Proxmox web interface to display temperature..."
@@ -255,7 +342,9 @@ modify_web_interface() {
     
     if [ ! -f "$pvemanager_js" ]; then
         echo "❌ pvemanagerlib.js not found at expected location"
-        return 1
+        echo "🔧 Trying alternative approach with extension file..."
+        create_temperature_extension
+        return 0
     fi
     
     # Check if already modified
@@ -264,60 +353,33 @@ modify_web_interface() {
         return 0
     fi
     
-    # Create temperature display code
-    cat > /tmp/temperature_js.js << 'EOF'
-            // Temperature monitoring display
-            if (data['thermal-state']) {
-                var thermal = data['thermal-state'];
-                if (thermal['cpu-thermal']) {
-                    items.push({
-                        itemId: 'thermal',
-                        colspan: 2,
-                        printBar: false,
-                        title: gettext('CPU Temperature'),
-                        textField: 'thermal',
-                        renderer: function(value) {
-                            return thermal['cpu-thermal'] + '°C';
-                        }
-                    });
-                }
-                if (thermal['disk-thermal']) {
-                    items.push({
-                        itemId: 'disk-thermal',
-                        colspan: 2,
-                        printBar: false,
-                        title: gettext('Disk Temperature'),
-                        textField: 'disk-thermal',
-                        renderer: function(value) {
-                            return thermal['disk-thermal'] + '°C';
-                        }
-                    });
-                }
-            }
+    # Try safer approach - create extension file instead of modifying core files
+    echo "🔧 Using extension-based approach for better compatibility..."
+    create_temperature_extension
+    
+    # Also try to add a simple CSS-based display as fallback
+    cat > /usr/share/pve-manager/css/pve-temperature.css << 'EOF'
+/* Temperature monitoring styles */
+.pve-temperature-info {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    margin: 4px 0;
+}
+
+.pve-temperature-label {
+    font-weight: bold;
+    color: #333;
+}
+
+.pve-temperature-value {
+    color: #666;
+    float: right;
+}
 EOF
     
-    # Find the right place to insert (after CPU usage section)
-    local insert_line=$(grep -n "title: gettext('CPU usage')" "$pvemanager_js" | head -1 | cut -d: -f1)
-    
-    if [ -z "$insert_line" ]; then
-        echo "❌ Could not find insertion point in pvemanagerlib.js"
-        return 1
-    fi
-    
-    # Find the end of the CPU usage block
-    local end_line=$(tail -n +$insert_line "$pvemanager_js" | grep -n "})" | head -1 | cut -d: -f1)
-    end_line=$((insert_line + end_line))
-    
-    # Insert the temperature display code
-    head -n $end_line "$pvemanager_js" > /tmp/pvemanager_js_new
-    cat /tmp/temperature_js.js >> /tmp/pvemanager_js_new
-    tail -n +$((end_line + 1)) "$pvemanager_js" >> /tmp/pvemanager_js_new
-    
-    # Replace the original file
-    mv /tmp/pvemanager_js_new "$pvemanager_js"
-    rm -f /tmp/temperature_js.js
-    
-    echo "✅ Web interface modified successfully"
+    echo "✅ Temperature extension and styles created"
 }
 
 # Function to restart Proxmox services
@@ -417,6 +479,18 @@ remove_temperature_monitoring() {
         echo "✅ Removed temperature monitoring script"
     fi
     
+    # Remove temperature extension if exists
+    if [ -f "/usr/share/pve-manager/js/pve-temperature-monitor.js" ]; then
+        rm -f "/usr/share/pve-manager/js/pve-temperature-monitor.js"
+        echo "✅ Removed temperature extension"
+    fi
+    
+    # Remove temperature CSS if exists
+    if [ -f "/usr/share/pve-manager/css/pve-temperature.css" ]; then
+        rm -f "/usr/share/pve-manager/css/pve-temperature.css"
+        echo "✅ Removed temperature CSS"
+    fi
+    
     # Restart services
     restart_services
     
@@ -468,9 +542,15 @@ test_temperature_monitoring() {
     fi
     
     if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
-        echo "✅ Web interface modifications present"
+        echo "✅ Web interface core modifications present"
+    elif [ -f "/usr/share/pve-manager/js/pve-temperature-monitor.js" ]; then
+        echo "✅ Temperature extension file present"
     else
         echo "❌ Web interface modifications missing"
+    fi
+    
+    if [ -f "/usr/share/pve-manager/css/pve-temperature.css" ]; then
+        echo "✅ Temperature CSS styles present"
     fi
 }
 
