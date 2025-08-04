@@ -209,22 +209,22 @@ calculate_sizes() {
 
 # Function to download and prepare Linux PE
 prepare_linux_pe() {
-    echo "🔄 Preparing Linux PE for automatic boot..."
+    echo "🔄 Preparing Tiny Core Linux PE for automatic boot..."
     
     # Create PE directory
     mkdir -p /boot/pe
     
-    # Download Ubuntu Live ISO (minimal version)
-    echo "📥 Downloading Ubuntu Live ISO..."
-    wget -O /tmp/ubuntu-live.iso "https://releases.ubuntu.com/22.04.3/ubuntu-22.04.3-desktop-amd64.iso"
+    # Download Tiny Core Linux (smallest available - ~16MB)
+    echo "📥 Downloading Tiny Core Linux..."
+    wget -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCore-12.0.iso"
     
     # Mount ISO and extract kernel and initrd
     echo "🔧 Extracting PE components..."
-    mount -o loop /tmp/ubuntu-live.iso /mnt
+    mount -o loop /tmp/tinycore.iso /mnt
     
     # Copy kernel and initrd
-    cp /mnt/casper/vmlinuz /boot/pe/
-    cp /mnt/casper/initrd /boot/pe/
+    cp /mnt/boot/vmlinuz64 /boot/pe/vmlinuz
+    cp /mnt/boot/core.gz /boot/pe/initrd
     
     # Create custom initrd with LVM tools
     echo "🔧 Creating custom initrd with LVM tools..."
@@ -232,16 +232,35 @@ prepare_linux_pe() {
     cd /tmp/initrd-extract
     zcat /boot/pe/initrd | cpio -idmv
     
-    # Add LVM tools to initrd
-    cp /sbin/lvs /tmp/initrd-extract/sbin/
-    cp /sbin/vgs /tmp/initrd-extract/sbin/
-    cp /sbin/pvs /tmp/initrd-extract/sbin/
-    cp /sbin/lvcreate /tmp/initrd-extract/sbin/
-    cp /sbin/lvextend /tmp/initrd-extract/sbin/
-    cp /sbin/pvresize /tmp/initrd-extract/sbin/
-    cp /sbin/resize2fs /tmp/initrd-extract/sbin/
-    cp /sbin/mkfs.ext4 /tmp/initrd-extract/sbin/
-    cp /sbin/bc /tmp/initrd-extract/sbin/
+    # Add LVM tools to initrd (Tiny Core already has basic LVM tools)
+    # Copy additional tools if needed
+    if [[ -f "/sbin/lvs" ]]; then
+        cp /sbin/lvs /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/vgs" ]]; then
+        cp /sbin/vgs /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/pvs" ]]; then
+        cp /sbin/pvs /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/lvcreate" ]]; then
+        cp /sbin/lvcreate /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/lvextend" ]]; then
+        cp /sbin/lvextend /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/pvresize" ]]; then
+        cp /sbin/pvresize /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/resize2fs" ]]; then
+        cp /sbin/resize2fs /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/sbin/mkfs.ext4" ]]; then
+        cp /sbin/mkfs.ext4 /tmp/initrd-extract/sbin/ 2>/dev/null || true
+    fi
+    if [[ -f "/usr/bin/bc" ]]; then
+        cp /usr/bin/bc /tmp/initrd-extract/usr/bin/ 2>/dev/null || true
+    fi
     
     # Repack initrd
     find . | cpio -o -H newc | gzip > /boot/pe/initrd-custom
@@ -251,7 +270,7 @@ prepare_linux_pe() {
     umount /mnt
     rm -rf /tmp/initrd-extract
     
-    echo "✅ Linux PE prepared successfully"
+    echo "✅ Tiny Core Linux PE prepared successfully (Size: ~16MB)"
 }
 
 # Function to create automatic PE boot script
