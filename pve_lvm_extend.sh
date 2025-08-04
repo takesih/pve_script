@@ -128,6 +128,11 @@ extend_root_volume() {
 
 # Function to extend data volume
 extend_data_volume() {
+    if [[ "$SKIP_DATA_VOLUME" == "true" ]]; then
+        echo "ℹ️  Skipping data volume extension (data volume creation was skipped)"
+        return 0
+    fi
+    
     echo "🔄 Extending data volume to use remaining space..."
     
     # Get available free space
@@ -142,6 +147,12 @@ extend_data_volume() {
     # Extend data volume to use all remaining space
     echo "Extending data volume..."
     lvextend -l +100%FREE /dev/pve/data
+    
+    # Extend filesystem if it's mounted
+    if mountpoint -q /mnt/pve/data; then
+        echo "Extending filesystem..."
+        resize2fs /dev/pve/data
+    fi
     
     echo "✅ Data volume extended successfully"
     echo ""
@@ -209,14 +220,82 @@ calculate_sizes() {
     echo "Calculated root size: $ROOT_SIZE_CALC"
 }
 
-# Function to check if data volume exists
+# Function to check if data volume exists and create if needed
 check_data_volume() {
     if ! lvs /dev/pve/data >/dev/null 2>&1; then
-        echo "❌ Error: /dev/pve/data volume does not exist"
-        echo "This script is designed for systems with existing data volume"
-        echo "For new LVM-thin setup, use pve_lvm_thin_setup.sh"
+        echo "⚠️  /dev/pve/data volume does not exist"
+        echo ""
+        echo "Available options:"
+        echo "1. Create data volume and continue (Recommended)"
+        echo "2. Skip data volume creation (extend root only)"
+        echo "3. Cancel operation"
+        echo ""
+        
+        read -p "Select option (1-3): " data_option
+        
+        case $data_option in
+            1)
+                echo "🔄 Creating data volume..."
+                create_data_volume
+                ;;
+            2)
+                echo "ℹ️  Skipping data volume creation"
+                SKIP_DATA_VOLUME=true
+                ;;
+            3)
+                echo "❌ Operation cancelled."
+                exit 1
+                ;;
+            *)
+                echo "Invalid option. Creating data volume..."
+                create_data_volume
+                ;;
+        esac
+    else
+        echo "✅ Data volume exists"
+        SKIP_DATA_VOLUME=false
+    fi
+}
+
+# Function to create data volume
+create_data_volume() {
+    echo "🔄 Creating data volume..."
+    
+    # Get available free space
+    local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+    echo "Available free space: ${free_space}G"
+    
+    if (( $(echo "$free_space < 1" | bc -l) )); then
+        echo "❌ Error: Insufficient free space (${free_space}G) for data volume"
         exit 1
     fi
+    
+    # Create data volume using 95% of free space (leave some buffer)
+    local data_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
+    echo "Creating data volume with ${data_size}G..."
+    
+    # Create logical volume
+    lvcreate -L "${data_size}G" -n data pve
+    
+    # Create filesystem (ext4)
+    echo "Creating filesystem..."
+    mkfs.ext4 /dev/pve/data
+    
+    # Create mount point
+    mkdir -p /mnt/pve/data
+    
+    # Add to fstab for persistence
+    echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+    
+    # Mount the volume
+    mount /dev/pve/data /mnt/pve/data
+    
+    echo "✅ Data volume created and mounted successfully"
+    echo "  Size: ${data_size}G"
+    echo "  Mount point: /mnt/pve/data"
+    echo ""
+    
+    SKIP_DATA_VOLUME=false
 }
 
 # Main execution
