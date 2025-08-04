@@ -471,27 +471,38 @@ EOF
     
     # Method 1: Look for CPU usage section specifically (most reliable)
     if [ -n "$cpu_line" ]; then
-        # Find the items.push pattern near the CPU usage section
-        local cpu_context_start=$((cpu_line - 10))
-        local cpu_context_end=$((cpu_line + 50))
+        echo "Method 1: Analyzing CPU context around line $cpu_line" >> "$debug_log"
         
-        # Look for items.push within the CPU context area
-        local cpu_items_push=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "items\.push" | tail -1 | cut -d: -f1)
+        # Look for the end of the CPU item definition
+        local cpu_context_start=$((cpu_line - 5))
+        local cpu_context_end=$((cpu_line + 15))
         
-        if [ -n "$cpu_items_push" ]; then
-            actual_insert=$((cpu_context_start + cpu_items_push - 1))
-            echo "🔍 Method 1: Found CPU context items.push at line $actual_insert"
+        # Find the closing of the CPU item (look for },{)
+        local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},\{" | head -1 | cut -d: -f1)
+        
+        if [ -n "$cpu_item_end" ]; then
+            actual_insert=$((cpu_context_start + cpu_item_end - 1))
+            echo "🔍 Method 1: Found CPU item end at line $actual_insert"
+            echo "Method 1 success: CPU item end at line $actual_insert" >> "$debug_log"
+        else
+            echo "Method 1 failed: No CPU item end found" >> "$debug_log"
         fi
     fi
     
-    # Method 2: If Method 1 fails, look for node status items pattern
+    # Method 2: If Method 1 fails, look for memory section pattern
     if [ -z "$actual_insert" ]; then
-        # Look for the specific pattern that indicates node status items
-        local status_pattern=$(grep -n "itemId.*memory.*iconCls.*fa.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
-        if [ -n "$status_pattern" ]; then
-            # Insert before the memory section
-            actual_insert=$((status_pattern - 1))
-            echo "🔍 Method 2: Using memory section pattern at line $actual_insert"
+        echo "Method 2: Looking for memory section pattern" >> "$debug_log"
+        
+        # Look for the memory item that comes after CPU
+        local memory_line=$(grep -n "itemId.*memory.*iconCls.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
+        
+        if [ -n "$memory_line" ]; then
+            # Insert just before the memory section
+            actual_insert=$((memory_line - 1))
+            echo "🔍 Method 2: Using memory section at line $actual_insert"
+            echo "Method 2 success: Memory section at line $memory_line, inserting at $actual_insert" >> "$debug_log"
+        else
+            echo "Method 2 failed: No memory section found" >> "$debug_log"
         fi
     fi
     
@@ -509,10 +520,19 @@ EOF
         fi
     fi
     
-    # Method 4: Fallback to safe location
+    # Method 4: Prevent fallback to wrong location
     if [ -z "$actual_insert" ]; then
         echo "❌ All methods failed, using fallback approach"
         echo "ERROR: All insertion methods failed" >> "$debug_log"
+        echo "🔧 Creating alternative temperature display method..."
+        create_alternative_temperature_display
+        return 1
+    fi
+    
+    # Safety check: Ensure we're not inserting in storage/permissions section
+    if [ "$actual_insert" -gt 50000 ]; then
+        echo "❌ Insertion point too far in file (line $actual_insert), likely wrong section"
+        echo "ERROR: Insertion point $actual_insert is in wrong section (>50000)" >> "$debug_log"
         echo "🔧 Creating alternative temperature display method..."
         create_alternative_temperature_display
         return 1
