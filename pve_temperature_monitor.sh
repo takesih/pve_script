@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:20
+# Version: 2025-01-08 00:25
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -438,31 +438,29 @@ modify_web_interface() {
     sed -n "$((cpu_line - 10)),$((cpu_line + 10))p" "$pvemanager_js" >> "$debug_log"
     echo "" >> "$debug_log"
     
-    # Create temperature display code that matches Proxmox's node status pattern
+    # Create temperature display code based on Reddit homelab approach
     cat > /tmp/temperature_display.js << 'EOF'
 },{
-    itemId: 'cpu-temperature',
-    iconCls: 'fa fa-fw fa-thermometer-half pmx-icon',
-    title: gettext('CPU Temperature'),
+    itemId: 'thermal',
+    colspan: 2,
     printBar: false,
-    textField: 'cpu-temperature',
-    renderer: function(value, metaData, record) {
-        var data = record.data;
-        if (data && data['thermal-state'] && data['thermal-state']['cpu-thermal']) {
-            return data['thermal-state']['cpu-thermal'] + '°C';
+    title: gettext('CPU Temperature'),
+    textField: 'thermal',
+    renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['cpu-thermal']) {
+            return record.data['thermal-state']['cpu-thermal'] + '°C';
         }
         return 'N/A';
     }
 },{
-    itemId: 'disk-temperature', 
-    iconCls: 'fa fa-fw fa-hdd-o pmx-icon',
-    title: gettext('Disk Temperature'),
+    itemId: 'thermal-disk',
+    colspan: 2,
     printBar: false,
-    textField: 'disk-temperature',
-    renderer: function(value, metaData, record) {
-        var data = record.data;
-        if (data && data['thermal-state'] && data['thermal-state']['disk-thermal']) {
-            return data['thermal-state']['disk-thermal'] + '°C';
+    title: gettext('Disk Temperature'),
+    textField: 'thermal-disk',
+    renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['disk-thermal']) {
+            return record.data['thermal-state']['disk-thermal'] + '°C';
         }
         return 'N/A';
     }
@@ -471,62 +469,68 @@ EOF
     # Try multiple approaches to find a safe insertion point
     local actual_insert=""
     
-    # Method 1: Look for CPU usage section specifically (most reliable)
+    # Method 1: Reddit homelab approach - look for specific CPU usage patterns
     if [ -n "$cpu_line" ]; then
-        echo "Method 1: Analyzing CPU context around line $cpu_line" >> "$debug_log"
+        echo "Method 1: Reddit homelab approach around line $cpu_line" >> "$debug_log"
         
-        # Look for the end of the CPU item definition - find calculate: Ext.identityFn,
-        local cpu_context_start=$((cpu_line - 5))
-        local cpu_context_end=$((cpu_line + 20))
+        # Look for the node status items array structure
+        local cpu_context_start=$((cpu_line - 10))
+        local cpu_context_end=$((cpu_line + 30))
         
-        # Find the line with "calculate: Ext.identityFn," which is the end of CPU item
-        local cpu_calc_line=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "calculate.*Ext\.identityFn" | head -1 | cut -d: -f1)
+        # Find the end of CPU item - look for the next },{
+        local cpu_end_line=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
         
-        if [ -n "$cpu_calc_line" ]; then
-            actual_insert=$((cpu_context_start + cpu_calc_line - 1))
-            echo "🔍 Method 1: Found CPU calculate line at $actual_insert"
-            echo "Method 1 success: CPU calculate line at $actual_insert" >> "$debug_log"
+        if [ -n "$cpu_end_line" ]; then
+            actual_insert=$((cpu_context_start + cpu_end_line - 1))
+            echo "🔍 Method 1: Found CPU end at line $actual_insert"
+            echo "Method 1 success: CPU end at line $actual_insert" >> "$debug_log"
+            
+            # Log the context for verification
+            echo "Context around insertion point:" >> "$debug_log"
+            sed -n "$((actual_insert - 3)),$((actual_insert + 3))p" "$pvemanager_js" >> "$debug_log"
         else
-            # Alternative: look for the closing },{
-            local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
-            if [ -n "$cpu_item_end" ]; then
-                actual_insert=$((cpu_context_start + cpu_item_end - 1))
-                echo "🔍 Method 1: Found CPU item end at line $actual_insert"
-                echo "Method 1 success: CPU item end at line $actual_insert" >> "$debug_log"
-            else
-                echo "Method 1 failed: No CPU item end found" >> "$debug_log"
-            fi
+            echo "Method 1 failed: No CPU end pattern found" >> "$debug_log"
         fi
     fi
     
-    # Method 2: If Method 1 fails, look for memory section pattern
+    # Method 2: Look for memory item as reference point
     if [ -z "$actual_insert" ]; then
-        echo "Method 2: Looking for memory section pattern" >> "$debug_log"
+        echo "Method 2: Looking for memory item reference" >> "$debug_log"
         
-        # Look for the memory item that comes after CPU - use exact pattern from debug log
-        local memory_line=$(grep -n "itemId.*memory" "$pvemanager_js" | grep -v "function" | head -1 | cut -d: -f1)
+        # Find memory item in the same context as CPU
+        local memory_line=$(grep -n "itemId.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
         
-        if [ -n "$memory_line" ]; then
-            # Insert just before the memory section
+        if [ -n "$memory_line" ] && [ "$memory_line" -gt "$cpu_line" ] && [ "$memory_line" -lt $((cpu_line + 50)) ]; then
+            # Insert right before memory item
             actual_insert=$((memory_line - 1))
-            echo "🔍 Method 2: Using memory section at line $actual_insert"
-            echo "Method 2 success: Memory section at line $memory_line, inserting at $actual_insert" >> "$debug_log"
+            echo "🔍 Method 2: Inserting before memory at line $actual_insert"
+            echo "Method 2 success: Before memory at line $actual_insert" >> "$debug_log"
         else
-            echo "Method 2 failed: No memory section found" >> "$debug_log"
+            echo "Method 2 failed: No suitable memory reference found" >> "$debug_log"
         fi
     fi
     
-    # Method 3: Simple approach - insert after CPU line + offset
+    # Method 3: Direct pattern matching approach
     if [ -z "$actual_insert" ]; then
-        echo "Method 3: Using simple CPU line offset" >> "$debug_log"
+        echo "Method 3: Direct pattern matching" >> "$debug_log"
         
-        if [ -n "$cpu_line" ]; then
-            # Based on debug log structure, CPU item typically ends around 10-12 lines after title
-            actual_insert=$((cpu_line + 10))
-            echo "🔍 Method 3: Using CPU line + 10 offset at line $actual_insert"
-            echo "Method 3 success: CPU line + offset at $actual_insert" >> "$debug_log"
+        # Look for the specific pattern that indicates where to insert
+        # Find lines with "calculate: Ext.identityFn," which typically ends CPU item
+        local calc_line=$(grep -n "calculate.*Ext\.identityFn" "$pvemanager_js" | head -1 | cut -d: -f1)
+        
+        if [ -n "$calc_line" ] && [ "$calc_line" -gt "$cpu_line" ] && [ "$calc_line" -lt $((cpu_line + 20)) ]; then
+            actual_insert=$calc_line
+            echo "🔍 Method 3: Using calculate line at $actual_insert"
+            echo "Method 3 success: Calculate line at $actual_insert" >> "$debug_log"
         else
-            echo "Method 3 failed: No CPU line available" >> "$debug_log"
+            # Final fallback: use CPU line + reasonable offset
+            if [ -n "$cpu_line" ]; then
+                actual_insert=$((cpu_line + 8))
+                echo "🔍 Method 3: Final fallback at line $actual_insert"
+                echo "Method 3 fallback: CPU + 8 at $actual_insert" >> "$debug_log"
+            else
+                echo "Method 3 failed: No CPU reference available" >> "$debug_log"
+            fi
         fi
     fi
     
