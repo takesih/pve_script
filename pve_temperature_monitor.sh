@@ -510,14 +510,6 @@ EOF
         return 1
     fi
     
-    # Method 4: Prevent fallback to wrong location
-    if [ -z "$actual_insert" ]; then
-        echo "❌ All methods failed to find insertion point"
-        echo "ERROR: All insertion methods failed" >> "$debug_log"
-        echo "❌ Cannot modify web interface - temperature will be available via command line only"
-        return 1
-    fi
-    
     # Safety check: Ensure we're not inserting in storage/permissions section
     if [ "$actual_insert" -gt 50000 ]; then
         echo "❌ Insertion point too far in file (line $actual_insert), likely wrong section"
