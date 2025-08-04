@@ -220,6 +220,13 @@ prepare_linux_pe() {
     
     # Mount ISO and extract kernel and initrd
     echo "🔧 Extracting PE components..."
+    
+    # Unmount if already mounted
+    if mountpoint -q /mnt; then
+        echo "Unmounting existing mount..."
+        umount /mnt 2>/dev/null || true
+    fi
+    
     mount -o loop /tmp/tinycore.iso /mnt
     
     # Copy kernel and initrd
