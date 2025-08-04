@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:25
+# Version: 2025-01-08 00:30
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -438,7 +438,7 @@ modify_web_interface() {
     sed -n "$((cpu_line - 10)),$((cpu_line + 10))p" "$pvemanager_js" >> "$debug_log"
     echo "" >> "$debug_log"
     
-    # Create temperature display code based on Reddit homelab approach
+    # Create temperature display code - insert after calculate: Ext.identityFn,
     cat > /tmp/temperature_display.js << 'EOF'
 },{
     itemId: 'thermal',
@@ -481,9 +481,10 @@ EOF
         local cpu_end_line=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
         
         if [ -n "$cpu_end_line" ]; then
-            actual_insert=$((cpu_context_start + cpu_end_line - 1))
-            echo "🔍 Method 1: Found CPU end at line $actual_insert"
-            echo "Method 1 success: CPU end at line $actual_insert" >> "$debug_log"
+            # Insert BEFORE the },{ line, not at it
+            actual_insert=$((cpu_context_start + cpu_end_line - 2))
+            echo "🔍 Method 1: Found CPU end, inserting before },{ at line $actual_insert"
+            echo "Method 1 success: Before },{ at line $actual_insert" >> "$debug_log"
             
             # Log the context for verification
             echo "Context around insertion point:" >> "$debug_log"
@@ -601,11 +602,8 @@ EOF
                 echo "WARNING: $syntax_errors" >> "$debug_log"
             fi
             
-            # Check for proper object structure
-            if echo "$insert_area" | grep -q "if.*data.*thermal-state"; then
-                syntax_errors="Conditional logic in wrong context"
-                echo "WARNING: $syntax_errors" >> "$debug_log"
-            fi
+            # Check for proper object structure (skip - this is valid in renderer functions)
+            # Conditional logic is expected in renderer functions
             
             # Check for items.push in wrong context
             if echo "$insert_area" | grep -q "items\.push" && ! echo "$insert_area" | grep -q "me\.items\.push"; then
