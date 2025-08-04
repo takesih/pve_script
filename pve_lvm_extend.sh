@@ -253,7 +253,145 @@ check_data_volume() {
         esac
     else
         echo "✅ Data volume exists"
+        
+        # Check if data volume has proper LVM-thin structure
+        check_data_volume_structure
+        
         SKIP_DATA_VOLUME=false
+    fi
+}
+
+# Function to check data volume structure
+check_data_volume_structure() {
+    echo "🔍 Checking data volume structure..."
+    
+    # Check if it's a thin volume
+    local is_thin=$(lvs -o lv_name,lv_layout /dev/pve/data | grep -c "thin" || echo "0")
+    
+    if [[ "$is_thin" == "1" ]]; then
+        echo "✅ Data volume is already a thin volume"
+        
+        # Check if thin pool exists
+        local thin_pool_exists=$(lvs -o lv_name,lv_layout /dev/pve/data_tdata 2>/dev/null | grep -c "thin" || echo "0")
+        
+        if [[ "$thin_pool_exists" == "1" ]]; then
+            echo "✅ Thin pool structure is correct"
+            return 0
+        else
+            echo "⚠️  Thin volume exists but thin pool structure is incorrect"
+            fix_data_volume_structure
+        fi
+    else
+        echo "⚠️  Data volume is not a thin volume"
+        echo ""
+        echo "Available options:"
+        echo "1. Convert to LVM-thin structure (Recommended)"
+        echo "2. Keep as regular LVM volume"
+        echo "3. Cancel operation"
+        echo ""
+        
+        read -p "Select option (1-3): " structure_option
+        
+        case $structure_option in
+            1)
+                echo "🔄 Converting to LVM-thin structure..."
+                fix_data_volume_structure
+                ;;
+            2)
+                echo "ℹ️  Keeping as regular LVM volume"
+                ;;
+            3)
+                echo "❌ Operation cancelled."
+                exit 1
+                ;;
+            *)
+                echo "Invalid option. Converting to LVM-thin structure..."
+                fix_data_volume_structure
+                ;;
+        esac
+    fi
+}
+
+# Function to fix data volume structure
+fix_data_volume_structure() {
+    echo "🔄 Fixing data volume structure..."
+    
+    # Get current data volume size
+    local current_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+    echo "Current data volume size: ${current_size}G"
+    
+    # Check if it's mounted
+    local is_mounted=false
+    if mountpoint -q /mnt/pve/data; then
+        is_mounted=true
+        echo "⚠️  Data volume is mounted. Unmounting..."
+        umount /mnt/pve/data
+    fi
+    
+    # Remove existing data volume
+    echo "🔄 Removing existing data volume..."
+    lvremove -f /dev/pve/data
+    
+    # Get available free space
+    local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+    echo "Available free space: ${free_space}G"
+    
+    if (( $(echo "$free_space < 1" | bc -l) )); then
+        echo "❌ Error: Insufficient free space (${free_space}G) for data volume"
+        exit 1
+    fi
+    
+    # Create thin pool using 95% of free space
+    local pool_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
+    echo "Creating thin pool with ${pool_size}G..."
+    
+    # Create thin pool
+    lvcreate -L "${pool_size}G" -T pve/data
+    
+    # Get thin pool size for thin volume creation
+    local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+    
+    # Create thin volume (use 95% of pool size for over-provisioning)
+    local thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
+    echo "Creating thin volume with ${thin_volume_size}G..."
+    lvcreate -V "${thin_volume_size}G" -T pve/data -n data
+    
+    # Create filesystem (ext4)
+    echo "Creating filesystem..."
+    mkfs.ext4 /dev/pve/data
+    
+    # Create mount point if it doesn't exist
+    mkdir -p /mnt/pve/data
+    
+    # Add to fstab for persistence (remove existing entry first)
+    sed -i '/\/dev\/pve\/data/d' /etc/fstab
+    echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+    
+    # Mount the volume if it was previously mounted
+    if [[ "$is_mounted" == "true" ]]; then
+        echo "🔄 Remounting data volume..."
+        mount /dev/pve/data /mnt/pve/data
+    fi
+    
+    echo "✅ Data volume structure fixed successfully"
+    echo "  Thin pool size: ${thin_pool_size}G"
+    echo "  Thin volume size: ${thin_volume_size}G"
+    echo "  Mount point: /mnt/pve/data"
+    echo ""
+    
+    # Add Proxmox storage configuration
+    echo "🔄 Adding LVM-thin storage to Proxmox..."
+    if ! grep -q "lvmthin: local-lvm" /etc/pve/storage.cfg 2>/dev/null; then
+        cat >> /etc/pve/storage.cfg << 'STORAGE_EOF'
+
+lvmthin: local-lvm
+	thinpool data
+	vgname pve
+	content vztmpl,backup,iso,rootdir,images
+STORAGE_EOF
+        echo "✅ LVM-thin storage configuration added to Proxmox"
+    else
+        echo "ℹ️  LVM-thin storage configuration already exists"
     fi
 }
 
