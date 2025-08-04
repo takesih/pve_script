@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:07
+# Version: 2025-01-08 00:10
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -478,7 +478,7 @@ EOF
         local cpu_context_end=$((cpu_line + 15))
         
         # Find the closing of the CPU item (look for },{)
-        local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},\{" | head -1 | cut -d: -f1)
+        local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
         
         if [ -n "$cpu_item_end" ]; then
             actual_insert=$((cpu_context_start + cpu_item_end - 1))
@@ -522,10 +522,9 @@ EOF
     
     # Method 4: Prevent fallback to wrong location
     if [ -z "$actual_insert" ]; then
-        echo "❌ All methods failed, using fallback approach"
+        echo "❌ All methods failed to find insertion point"
         echo "ERROR: All insertion methods failed" >> "$debug_log"
-        echo "🔧 Creating alternative temperature display method..."
-        create_alternative_temperature_display
+        echo "❌ Cannot modify web interface - temperature will be available via command line only"
         return 1
     fi
     
@@ -533,8 +532,7 @@ EOF
     if [ "$actual_insert" -gt 50000 ]; then
         echo "❌ Insertion point too far in file (line $actual_insert), likely wrong section"
         echo "ERROR: Insertion point $actual_insert is in wrong section (>50000)" >> "$debug_log"
-        echo "🔧 Creating alternative temperature display method..."
-        create_alternative_temperature_display
+        echo "❌ Cannot modify web interface safely - temperature will be available via command line only"
         return 1
     fi
     
@@ -636,9 +634,10 @@ EOF
     echo "🔍 Debug log saved: $debug_log"
 }
 
-# Function to create alternative temperature display
+# Function to create alternative temperature display (disabled - dashboard only)
 create_alternative_temperature_display() {
-    echo "🔧 Creating alternative temperature display method..."
+    echo "❌ Alternative display disabled - focusing on dashboard integration only"
+    return 1
     
     # Create a simple temperature widget that can be manually added
     cat > /usr/share/pve-manager/js/pve-temperature-widget.js << 'EOF'
@@ -742,38 +741,143 @@ EOF
 
     <script>
         function updateTemperature() {
-            fetch('/api2/json/nodes/' + window.location.hostname + '/status')
+            // Try multiple methods to get temperature data
+            
+            // Method 1: Try the CGI script
+            fetch('/temperature.cgi')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.data && data.data['thermal-state']) {
-                        const thermal = data.data['thermal-state'];
-                        
-                        if (thermal['cpu-thermal']) {
-                            document.getElementById('cpu-temp').textContent = thermal['cpu-thermal'] + '°C';
-                        }
-                        
-                        if (thermal['disk-thermal']) {
-                            document.getElementById('disk-temp').textContent = thermal['disk-thermal'] + '°C';
-                        }
+                    console.log('CGI Response:', data);
+                    
+                    if (data.cpu_temperature && data.cpu_temperature !== 'N/A') {
+                        document.getElementById('cpu-temp').textContent = data.cpu_temperature + '°C';
+                    } else {
+                        document.getElementById('cpu-temp').textContent = 'N/A';
+                    }
+                    
+                    if (data.disk_temperature && data.disk_temperature !== 'N/A') {
+                        document.getElementById('disk-temp').textContent = data.disk_temperature + '°C';
+                    } else {
+                        document.getElementById('disk-temp').textContent = 'N/A';
                     }
                 })
                 .catch(error => {
-                    document.getElementById('cpu-temp').textContent = 'Error';
-                    document.getElementById('disk-temp').textContent = 'Error';
+                    console.log('CGI failed, trying Proxmox API:', error);
+                    tryProxmoxAPI();
                 });
+        }
+        
+        function tryProxmoxAPI() {
+            // Method 2: Try Proxmox API
+            const hostname = window.location.hostname;
+            
+            fetch('/api2/json/nodes/' + hostname + '/status', {
+                method: 'GET',
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log('Proxmox API Response:', result);
+                
+                if (result.data && result.data['thermal-state']) {
+                    const thermal = result.data['thermal-state'];
+                    
+                    document.getElementById('cpu-temp').textContent = 
+                        thermal['cpu-thermal'] ? thermal['cpu-thermal'] + '°C' : 'N/A';
+                    document.getElementById('disk-temp').textContent = 
+                        thermal['disk-thermal'] ? thermal['disk-thermal'] + '°C' : 'N/A';
+                } else {
+                    fallbackDisplay();
+                }
+            })
+            .catch(error => {
+                console.error('All methods failed:', error);
+                fallbackDisplay();
+            });
+        }
+        
+        function fallbackDisplay() {
+            document.getElementById('cpu-temp').textContent = 'Use CLI: pve-temp-monitor all';
+            document.getElementById('disk-temp').textContent = 'Check: sensors command';
         }
         
         // Initial load and auto-refresh
         updateTemperature();
         setInterval(updateTemperature, 30000);
+        
+        // Add manual refresh functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Temperature monitor loaded');
+            updateTemperature();
+        });
     </script>
 </body>
 </html>
 EOF
     
+    # Create a simple PHP script for temperature display (if PHP is available)
+    if command -v php >/dev/null 2>&1; then
+        cat > /usr/share/pve-manager/temperature.php << 'EOF'
+<?php
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+
+// Function to get CPU temperature
+function getCpuTemp() {
+    $output = shell_exec('/usr/local/bin/pve-temp-monitor cpu 2>/dev/null');
+    return trim($output) ?: 'N/A';
+}
+
+// Function to get disk temperature
+function getDiskTemp() {
+    $output = shell_exec('/usr/local/bin/pve-temp-monitor disk 2>/dev/null');
+    return trim($output) ?: 'N/A';
+}
+
+// Return JSON response
+$response = [
+    'cpu_temperature' => getCpuTemp(),
+    'disk_temperature' => getDiskTemp(),
+    'timestamp' => date('Y-m-d H:i:s')
+];
+
+echo json_encode($response);
+?>
+EOF
+        echo "📄 PHP temperature script created: /usr/share/pve-manager/temperature.php"
+    fi
+    
+    # Create a simple CGI script as another alternative
+    cat > /usr/share/pve-manager/temperature.cgi << 'EOF'
+#!/bin/bash
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+# Get temperatures using the monitoring script
+cpu_temp=$(/usr/local/bin/pve-temp-monitor cpu 2>/dev/null || echo "N/A")
+disk_temp=$(/usr/local/bin/pve-temp-monitor disk 2>/dev/null || echo "N/A")
+
+# Output JSON
+cat << JSON
+{
+    "cpu_temperature": "$cpu_temp",
+    "disk_temperature": "$disk_temp", 
+    "timestamp": "$(date '+%Y-%m-%d %H:%M:%S')"
+}
+JSON
+EOF
+    chmod +x /usr/share/pve-manager/temperature.cgi
+    
     echo "✅ Alternative temperature display created"
-    echo "🌐 Access temperature monitor at: https://your-proxmox-ip:8006/temperature-monitor.html"
-    echo "📁 Widget file created: /usr/share/pve-manager/js/pve-temperature-widget.js"
+    echo "🌐 Access methods:"
+    echo "   1. HTML page: https://$(hostname -I | awk '{print $1}'):8006/temperature-monitor.html"
+    echo "   2. JSON API: https://$(hostname -I | awk '{print $1}'):8006/temperature.cgi"
+    if command -v php >/dev/null 2>&1; then
+        echo "   3. PHP API: https://$(hostname -I | awk '{print $1}'):8006/temperature.php"
+    fi
+    echo "   4. Command line: /usr/local/bin/pve-temp-monitor all"
+    echo "📁 Widget file: /usr/share/pve-manager/js/pve-temperature-widget.js"
 }
 
 # Function to restart Proxmox services
@@ -873,16 +977,8 @@ remove_temperature_monitoring() {
         echo "✅ Removed temperature monitoring script"
     fi
     
-    # Remove alternative temperature display files
-    if [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
-        rm -f "/usr/share/pve-manager/js/pve-temperature-widget.js"
-        echo "✅ Removed temperature widget"
-    fi
-    
-    if [ -f "/usr/share/pve-manager/temperature-monitor.html" ]; then
-        rm -f "/usr/share/pve-manager/temperature-monitor.html"
-        echo "✅ Removed temperature monitor page"
-    fi
+    # Clean up any leftover files (focus on dashboard only)
+    echo "🧹 Cleaning up temperature monitoring files..."
     
     # Restart services
     restart_services
@@ -945,13 +1041,10 @@ test_temperature_monitoring() {
     echo "🔍 Checking Proxmox web interface modifications:"
     if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
         echo "✅ Web interface modifications present"
-        echo "🌡️  Temperature should appear in node summary page"
-    elif [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
-        echo "✅ Alternative temperature widget available"
-        echo "🌐 Access at: https://$(hostname -I | awk '{print $1}'):8006/temperature-monitor.html"
+        echo "🌡️  Temperature should appear in Proxmox dashboard"
     else
         echo "❌ Web interface modifications missing"
-        echo "⚠️  Temperature will not appear in web interface"
+        echo "⚠️  Temperature will not appear in dashboard"
     fi
     
     # Show debug log information if available
@@ -1007,15 +1100,11 @@ install_temperature_monitoring() {
     
     # Check if web interface was successfully modified
     if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
-        echo "🌡️  Web interface integration: SUCCESS"
-        echo "   Temperature will appear in Proxmox node summary page"
+        echo "🌡️  Dashboard integration: SUCCESS"
+        echo "   Temperature will appear in Proxmox dashboard"
         echo "   Refresh your browser (Ctrl+F5) to see changes"
-    elif [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
-        echo "🌐 Alternative web interface available:"
-        echo "   Access at: https://$(hostname -I | awk '{print $1}'):8006/temperature-monitor.html"
-        echo "   Widget file: /usr/share/pve-manager/js/pve-temperature-widget.js"
     else
-        echo "⚠️  Web interface integration: FAILED"
+        echo "⚠️  Dashboard integration: FAILED"
         echo "   Temperature available via command line only"
     fi
     
