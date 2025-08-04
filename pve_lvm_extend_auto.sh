@@ -4,7 +4,7 @@
 # Script to extend LVM volumes after disk expansion with automatic PE boot
 # Designed for remote systems without user intervention
 # Based on Proxmox forum: https://forum.proxmox.com/threads/extend-local-lvm-proxmox.133478/#post-589215
-# Version: 2025-01-08 054715
+# Version: 2025-01-08 055000
 # Author: Proxmox LVM Management Tool
 
 set -e
@@ -224,7 +224,7 @@ prepare_linux_pe() {
     
     # Copy kernel and initrd
     cp /mnt/boot/vmlinuz64 /boot/pe/vmlinuz
-    cp /mnt/boot/core.gz /boot/pe/initrd
+    cp /mnt/boot/corepure64.gz /boot/pe/initrd
     
     # Create custom initrd with LVM tools
     echo "🔧 Creating custom initrd with LVM tools..."
