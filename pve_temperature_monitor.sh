@@ -440,38 +440,40 @@ modify_web_interface() {
     
     # Create temperature display code - insert between CPU and Memory items
     cat > /tmp/temperature_display.js << 'EOF'
-    itemId: 'thermal',
-    colspan: 2,
-    printBar: false,
-    title: gettext('CPU Temperature'),
-    textField: 'thermal',
-    renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-        if (record.data) {
-            if (record.data['thermal-state']) {
-                if (record.data['thermal-state']['cpu-thermal']) {
-                    return record.data['thermal-state']['cpu-thermal'] + '°C';
+        {
+            itemId: 'thermal',
+            colspan: 2,
+            printBar: false,
+            title: gettext('CPU Temperature'),
+            textField: 'thermal',
+            renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+                if (record.data) {
+                    if (record.data['thermal-state']) {
+                        if (record.data['thermal-state']['cpu-thermal']) {
+                            return record.data['thermal-state']['cpu-thermal'] + '°C';
+                        }
+                    }
                 }
+                return 'N/A';
             }
-        }
-        return 'N/A';
-    }
-},{
-    itemId: 'thermal-disk',
-    colspan: 2,
-    printBar: false,
-    title: gettext('Disk Temperature'),
-    textField: 'thermal-disk',
-    renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-        if (record.data) {
-            if (record.data['thermal-state']) {
-                if (record.data['thermal-state']['disk-thermal']) {
-                    return record.data['thermal-state']['disk-thermal'] + '°C';
+        },
+        {
+            itemId: 'thermal-disk',
+            colspan: 2,
+            printBar: false,
+            title: gettext('Disk Temperature'),
+            textField: 'thermal-disk',
+            renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+                if (record.data) {
+                    if (record.data['thermal-state']) {
+                        if (record.data['thermal-state']['disk-thermal']) {
+                            return record.data['thermal-state']['disk-thermal'] + '°C';
+                        }
+                    }
                 }
+                return 'N/A';
             }
-        }
-        return 'N/A';
-    }
-},{
+        },
 EOF
     
     # Try multiple approaches to find a safe insertion point
