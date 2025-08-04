@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:30
+# Version: 2025-01-08 00:40
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -438,17 +438,20 @@ modify_web_interface() {
     sed -n "$((cpu_line - 10)),$((cpu_line + 10))p" "$pvemanager_js" >> "$debug_log"
     echo "" >> "$debug_log"
     
-    # Create temperature display code - insert after calculate: Ext.identityFn,
+    # Create temperature display code - insert between CPU and Memory items
     cat > /tmp/temperature_display.js << 'EOF'
-},{
     itemId: 'thermal',
     colspan: 2,
     printBar: false,
     title: gettext('CPU Temperature'),
     textField: 'thermal',
     renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['cpu-thermal']) {
-            return record.data['thermal-state']['cpu-thermal'] + '°C';
+        if (record.data) {
+            if (record.data['thermal-state']) {
+                if (record.data['thermal-state']['cpu-thermal']) {
+                    return record.data['thermal-state']['cpu-thermal'] + '°C';
+                }
+            }
         }
         return 'N/A';
     }
@@ -459,11 +462,16 @@ modify_web_interface() {
     title: gettext('Disk Temperature'),
     textField: 'thermal-disk',
     renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['disk-thermal']) {
-            return record.data['thermal-state']['disk-thermal'] + '°C';
+        if (record.data) {
+            if (record.data['thermal-state']) {
+                if (record.data['thermal-state']['disk-thermal']) {
+                    return record.data['thermal-state']['disk-thermal'] + '°C';
+                }
+            }
         }
         return 'N/A';
     }
+},{
 EOF
     
     # Try multiple approaches to find a safe insertion point
@@ -502,10 +510,17 @@ EOF
         local memory_line=$(grep -n "itemId.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
         
         if [ -n "$memory_line" ] && [ "$memory_line" -gt "$cpu_line" ] && [ "$memory_line" -lt $((cpu_line + 50)) ]; then
-            # Insert right before memory item
-            actual_insert=$((memory_line - 1))
-            echo "🔍 Method 2: Inserting before memory at line $actual_insert"
-            echo "Method 2 success: Before memory at line $actual_insert" >> "$debug_log"
+            # Insert right before memory item - find the },{  before memory
+            local before_memory_line=$(sed -n "$((memory_line - 5)),$((memory_line - 1))p" "$pvemanager_js" | grep -n "},{" | tail -1 | cut -d: -f1)
+            if [ -n "$before_memory_line" ]; then
+                actual_insert=$((memory_line - 5 + before_memory_line - 1))
+                echo "🔍 Method 2: Inserting after },{ before memory at line $actual_insert"
+                echo "Method 2 success: After },{ before memory at line $actual_insert" >> "$debug_log"
+            else
+                actual_insert=$((memory_line - 2))
+                echo "🔍 Method 2: Fallback before memory at line $actual_insert"
+                echo "Method 2 fallback: Before memory at line $actual_insert" >> "$debug_log"
+            fi
         else
             echo "Method 2 failed: No suitable memory reference found" >> "$debug_log"
         fi
@@ -688,7 +703,8 @@ Ext.define('PVE.node.TemperatureWidget', {
             method: 'GET',
             success: function(response) {
                 var data = Ext.decode(response.responseText).data;
-                if (data && data['thermal-state']) {
+                if (data) {
+                    if (data['thermal-state']) {
                     var thermal = data['thermal-state'];
                     
                     if (thermal['cpu-thermal']) {
@@ -761,13 +777,15 @@ EOF
                 .then(data => {
                     console.log('CGI Response:', data);
                     
-                    if (data.cpu_temperature && data.cpu_temperature !== 'N/A') {
+                    if (data.cpu_temperature) {
+                        if (data.cpu_temperature !== 'N/A') {
                         document.getElementById('cpu-temp').textContent = data.cpu_temperature + '°C';
                     } else {
                         document.getElementById('cpu-temp').textContent = 'N/A';
                     }
                     
-                    if (data.disk_temperature && data.disk_temperature !== 'N/A') {
+                    if (data.disk_temperature) {
+                        if (data.disk_temperature !== 'N/A') {
                         document.getElementById('disk-temp').textContent = data.disk_temperature + '°C';
                     } else {
                         document.getElementById('disk-temp').textContent = 'N/A';
@@ -791,7 +809,8 @@ EOF
             .then(result => {
                 console.log('Proxmox API Response:', result);
                 
-                if (result.data && result.data['thermal-state']) {
+                if (result.data) {
+                    if (result.data['thermal-state']) {
                     const thermal = result.data['thermal-state'];
                     
                     document.getElementById('cpu-temp').textContent = 
