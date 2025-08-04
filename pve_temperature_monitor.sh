@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:50
+# Version: 2025-01-08 01:10
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
