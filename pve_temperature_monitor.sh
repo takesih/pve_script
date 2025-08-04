@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:40
+# Version: 2025-01-08 00:50
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -476,77 +476,31 @@ modify_web_interface() {
         },
 EOF
     
-    # Try multiple approaches to find a safe insertion point
+    # Simplified insertion approach - find the exact location
     local actual_insert=""
     
-    # Method 1: Reddit homelab approach - look for specific CPU usage patterns
-    if [ -n "$cpu_line" ]; then
-        echo "Method 1: Reddit homelab approach around line $cpu_line" >> "$debug_log"
-        
-        # Look for the node status items array structure
-        local cpu_context_start=$((cpu_line - 10))
-        local cpu_context_end=$((cpu_line + 30))
-        
-        # Find the end of CPU item - look for the next },{
-        local cpu_end_line=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
-        
-        if [ -n "$cpu_end_line" ]; then
-            # Insert BEFORE the },{ line, not at it
-            actual_insert=$((cpu_context_start + cpu_end_line - 2))
-            echo "🔍 Method 1: Found CPU end, inserting before },{ at line $actual_insert"
-            echo "Method 1 success: Before },{ at line $actual_insert" >> "$debug_log"
-            
-            # Log the context for verification
-            echo "Context around insertion point:" >> "$debug_log"
-            sed -n "$((actual_insert - 3)),$((actual_insert + 3))p" "$pvemanager_js" >> "$debug_log"
-        else
-            echo "Method 1 failed: No CPU end pattern found" >> "$debug_log"
-        fi
-    fi
+    # Find the exact line where CPU item ends and memory item begins
+    local cpu_end_pattern="calculate: Ext.identityFn,"
+    local cpu_end_line=$(grep -n "$cpu_end_pattern" "$pvemanager_js" | head -1 | cut -d: -f1)
     
-    # Method 2: Look for memory item as reference point
-    if [ -z "$actual_insert" ]; then
-        echo "Method 2: Looking for memory item reference" >> "$debug_log"
-        
-        # Find memory item in the same context as CPU
+    if [ -n "$cpu_end_line" ]; then
+        # Insert right after the CPU item ends (after the closing brace)
+        actual_insert=$((cpu_end_line + 1))
+        echo "🔍 Found CPU end at line $cpu_end_line, inserting at line $actual_insert"
+        echo "CPU end found at line $cpu_end_line, inserting at line $actual_insert" >> "$debug_log"
+    else
+        # Fallback: find memory item and insert before it
         local memory_line=$(grep -n "itemId.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
-        
-        if [ -n "$memory_line" ] && [ "$memory_line" -gt "$cpu_line" ] && [ "$memory_line" -lt $((cpu_line + 50)) ]; then
-            # Insert right before memory item - find the },{  before memory
-            local before_memory_line=$(sed -n "$((memory_line - 5)),$((memory_line - 1))p" "$pvemanager_js" | grep -n "},{" | tail -1 | cut -d: -f1)
-            if [ -n "$before_memory_line" ]; then
-                actual_insert=$((memory_line - 5 + before_memory_line - 1))
-                echo "🔍 Method 2: Inserting after },{ before memory at line $actual_insert"
-                echo "Method 2 success: After },{ before memory at line $actual_insert" >> "$debug_log"
-            else
-                actual_insert=$((memory_line - 2))
-                echo "🔍 Method 2: Fallback before memory at line $actual_insert"
-                echo "Method 2 fallback: Before memory at line $actual_insert" >> "$debug_log"
-            fi
+        if [ -n "$memory_line" ]; then
+            actual_insert=$((memory_line - 1))
+            echo "🔍 Fallback: inserting before memory at line $actual_insert"
+            echo "Fallback: inserting before memory at line $actual_insert" >> "$debug_log"
         else
-            echo "Method 2 failed: No suitable memory reference found" >> "$debug_log"
+            echo "❌ Could not find suitable insertion point"
+            echo "ERROR: No suitable insertion point found" >> "$debug_log"
+            return 1
         fi
     fi
-    
-    # Method 3: Direct pattern matching approach
-    if [ -z "$actual_insert" ]; then
-        echo "Method 3: Direct pattern matching" >> "$debug_log"
-        
-        # Look for the specific pattern that indicates where to insert
-        # Find lines with "calculate: Ext.identityFn," which typically ends CPU item
-        local calc_line=$(grep -n "calculate.*Ext\.identityFn" "$pvemanager_js" | head -1 | cut -d: -f1)
-        
-        if [ -n "$calc_line" ] && [ "$calc_line" -gt "$cpu_line" ] && [ "$calc_line" -lt $((cpu_line + 20)) ]; then
-            actual_insert=$calc_line
-            echo "🔍 Method 3: Using calculate line at $actual_insert"
-            echo "Method 3 success: Calculate line at $actual_insert" >> "$debug_log"
-        else
-            # Final fallback: use CPU line + reasonable offset
-            if [ -n "$cpu_line" ]; then
-                actual_insert=$((cpu_line + 8))
-                echo "🔍 Method 3: Final fallback at line $actual_insert"
-                echo "Method 3 fallback: CPU + 8 at $actual_insert" >> "$debug_log"
-            else
                 echo "Method 3 failed: No CPU reference available" >> "$debug_log"
             fi
         fi
