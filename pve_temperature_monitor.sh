@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 00:10
+# Version: 2025-01-08 00:20
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -447,20 +447,22 @@ modify_web_interface() {
     printBar: false,
     textField: 'cpu-temperature',
     renderer: function(value, metaData, record) {
-        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['cpu-thermal']) {
-            return record.data['thermal-state']['cpu-thermal'] + '°C';
+        var data = record.data;
+        if (data && data['thermal-state'] && data['thermal-state']['cpu-thermal']) {
+            return data['thermal-state']['cpu-thermal'] + '°C';
         }
         return 'N/A';
     }
 },{
-    itemId: 'disk-temperature',
+    itemId: 'disk-temperature', 
     iconCls: 'fa fa-fw fa-hdd-o pmx-icon',
     title: gettext('Disk Temperature'),
     printBar: false,
     textField: 'disk-temperature',
     renderer: function(value, metaData, record) {
-        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['disk-thermal']) {
-            return record.data['thermal-state']['disk-thermal'] + '°C';
+        var data = record.data;
+        if (data && data['thermal-state'] && data['thermal-state']['disk-thermal']) {
+            return data['thermal-state']['disk-thermal'] + '°C';
         }
         return 'N/A';
     }
@@ -473,19 +475,27 @@ EOF
     if [ -n "$cpu_line" ]; then
         echo "Method 1: Analyzing CPU context around line $cpu_line" >> "$debug_log"
         
-        # Look for the end of the CPU item definition
+        # Look for the end of the CPU item definition - find calculate: Ext.identityFn,
         local cpu_context_start=$((cpu_line - 5))
-        local cpu_context_end=$((cpu_line + 15))
+        local cpu_context_end=$((cpu_line + 20))
         
-        # Find the closing of the CPU item (look for },{)
-        local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
+        # Find the line with "calculate: Ext.identityFn," which is the end of CPU item
+        local cpu_calc_line=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "calculate.*Ext\.identityFn" | head -1 | cut -d: -f1)
         
-        if [ -n "$cpu_item_end" ]; then
-            actual_insert=$((cpu_context_start + cpu_item_end - 1))
-            echo "🔍 Method 1: Found CPU item end at line $actual_insert"
-            echo "Method 1 success: CPU item end at line $actual_insert" >> "$debug_log"
+        if [ -n "$cpu_calc_line" ]; then
+            actual_insert=$((cpu_context_start + cpu_calc_line - 1))
+            echo "🔍 Method 1: Found CPU calculate line at $actual_insert"
+            echo "Method 1 success: CPU calculate line at $actual_insert" >> "$debug_log"
         else
-            echo "Method 1 failed: No CPU item end found" >> "$debug_log"
+            # Alternative: look for the closing },{
+            local cpu_item_end=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
+            if [ -n "$cpu_item_end" ]; then
+                actual_insert=$((cpu_context_start + cpu_item_end - 1))
+                echo "🔍 Method 1: Found CPU item end at line $actual_insert"
+                echo "Method 1 success: CPU item end at line $actual_insert" >> "$debug_log"
+            else
+                echo "Method 1 failed: No CPU item end found" >> "$debug_log"
+            fi
         fi
     fi
     
@@ -493,8 +503,8 @@ EOF
     if [ -z "$actual_insert" ]; then
         echo "Method 2: Looking for memory section pattern" >> "$debug_log"
         
-        # Look for the memory item that comes after CPU
-        local memory_line=$(grep -n "itemId.*memory.*iconCls.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
+        # Look for the memory item that comes after CPU - use exact pattern from debug log
+        local memory_line=$(grep -n "itemId.*memory" "$pvemanager_js" | grep -v "function" | head -1 | cut -d: -f1)
         
         if [ -n "$memory_line" ]; then
             # Insert just before the memory section
@@ -506,17 +516,17 @@ EOF
         fi
     fi
     
-    # Method 3: Look for the exact node status items pattern
+    # Method 3: Simple approach - insert after CPU line + offset
     if [ -z "$actual_insert" ]; then
-        # Look for the specific node status items structure
-        local node_status_start=$(grep -n "itemId.*cpu.*iconCls.*processor" "$pvemanager_js" | head -1 | cut -d: -f1)
-        if [ -n "$node_status_start" ]; then
-            # Find the next item after CPU (usually memory)
-            local next_item=$(sed -n "$((node_status_start + 1)),$((node_status_start + 20))p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
-            if [ -n "$next_item" ]; then
-                actual_insert=$((node_status_start + next_item - 1))
-                echo "🔍 Method 3: Using node status pattern at line $actual_insert"
-            fi
+        echo "Method 3: Using simple CPU line offset" >> "$debug_log"
+        
+        if [ -n "$cpu_line" ]; then
+            # Based on debug log structure, CPU item typically ends around 10-12 lines after title
+            actual_insert=$((cpu_line + 10))
+            echo "🔍 Method 3: Using CPU line + 10 offset at line $actual_insert"
+            echo "Method 3 success: CPU line + offset at $actual_insert" >> "$debug_log"
+        else
+            echo "Method 3 failed: No CPU line available" >> "$debug_log"
         fi
     fi
     
