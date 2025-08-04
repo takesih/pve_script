@@ -334,7 +334,9 @@ EOF
     echo "✅ Temperature extension created"
 }
 
-# Function to modify Proxmox web interface
+
+
+# Function to modify Proxmox web interface for temperature display
 modify_web_interface() {
     echo "🔧 Modifying Proxmox web interface to display temperature..."
     
@@ -342,9 +344,7 @@ modify_web_interface() {
     
     if [ ! -f "$pvemanager_js" ]; then
         echo "❌ pvemanagerlib.js not found at expected location"
-        echo "🔧 Trying alternative approach with extension file..."
-        create_temperature_extension
-        return 0
+        return 1
     fi
     
     # Check if already modified
@@ -353,33 +353,97 @@ modify_web_interface() {
         return 0
     fi
     
-    # Try safer approach - create extension file instead of modifying core files
-    echo "🔧 Using extension-based approach for better compatibility..."
-    create_temperature_extension
+    echo "🔍 Finding node summary section for temperature integration..."
     
-    # Also try to add a simple CSS-based display as fallback
-    cat > /usr/share/pve-manager/css/pve-temperature.css << 'EOF'
-/* Temperature monitoring styles */
-.pve-temperature-info {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 8px;
-    margin: 4px 0;
-}
-
-.pve-temperature-label {
-    font-weight: bold;
-    color: #333;
-}
-
-.pve-temperature-value {
-    color: #666;
-    float: right;
-}
+    # Look for the node status items section where CPU, Memory info is displayed
+    # We need to find where items are pushed to the status display
+    local cpu_line=$(grep -n "title.*gettext.*CPU" "$pvemanager_js" | head -1 | cut -d: -f1)
+    
+    if [ -z "$cpu_line" ]; then
+        # Try alternative patterns
+        cpu_line=$(grep -n "itemId.*cpu\|CPU usage" "$pvemanager_js" | head -1 | cut -d: -f1)
+    fi
+    
+    if [ -z "$cpu_line" ]; then
+        echo "❌ Could not find CPU section in web interface"
+        echo "🔧 Trying to find items.push pattern..."
+        
+        # Look for any items.push pattern in the file
+        local push_line=$(grep -n "items\.push" "$pvemanager_js" | tail -1 | cut -d: -f1)
+        if [ -n "$push_line" ]; then
+            echo "🔍 Found items.push at line $push_line, using as insertion point"
+            cpu_line=$push_line
+        else
+            echo "❌ No suitable insertion point found"
+            return 1
+        fi
+    fi
+    
+    echo "🔍 Found insertion point at line $cpu_line"
+    
+    # Create temperature display code that matches Proxmox's existing pattern
+    cat > /tmp/temperature_display.js << 'EOF'
+            
+            // Add temperature monitoring to node status
+            if (data && data['thermal-state']) {
+                var thermal = data['thermal-state'];
+                
+                // CPU Temperature
+                if (thermal['cpu-thermal']) {
+                    items.push({
+                        itemId: 'thermal-cpu',
+                        colspan: 2,
+                        printBar: false,
+                        title: gettext('CPU Temperature'),
+                        textField: 'thermal-cpu',
+                        renderer: function(value) {
+                            return thermal['cpu-thermal'] + '°C';
+                        }
+                    });
+                }
+                
+                // Disk Temperature  
+                if (thermal['disk-thermal']) {
+                    items.push({
+                        itemId: 'thermal-disk',
+                        colspan: 2, 
+                        printBar: false,
+                        title: gettext('Disk Temperature'),
+                        textField: 'thermal-disk',
+                        renderer: function(value) {
+                            return thermal['disk-thermal'] + '°C';
+                        }
+                    });
+                }
+            }
 EOF
     
-    echo "✅ Temperature extension and styles created"
+    # Insert the temperature code after the found line
+    # We'll add it after the CPU section to keep it organized
+    local insert_after=$((cpu_line + 10))  # Add some buffer to find the right spot
+    
+    # Find the next logical insertion point (after a closing brace or similar)
+    local actual_insert=$(sed -n "${cpu_line},$((cpu_line + 20))p" "$pvemanager_js" | grep -n "})" | head -1 | cut -d: -f1)
+    
+    if [ -n "$actual_insert" ]; then
+        actual_insert=$((cpu_line + actual_insert - 1))
+        echo "🔍 Inserting temperature code after line $actual_insert"
+        
+        # Create the modified file
+        head -n $actual_insert "$pvemanager_js" > /tmp/pvemanager_js_new
+        cat /tmp/temperature_display.js >> /tmp/pvemanager_js_new
+        tail -n +$((actual_insert + 1)) "$pvemanager_js" >> /tmp/pvemanager_js_new
+        
+        # Replace the original file
+        mv /tmp/pvemanager_js_new "$pvemanager_js"
+        rm -f /tmp/temperature_display.js
+        
+        echo "✅ Web interface modified successfully"
+        echo "🌡️  Temperature will now appear in node summary page"
+    else
+        echo "❌ Could not find safe insertion point"
+        return 1
+    fi
 }
 
 # Function to restart Proxmox services
@@ -479,7 +543,13 @@ remove_temperature_monitoring() {
         echo "✅ Removed temperature monitoring script"
     fi
     
-    # Remove temperature extension if exists
+    # Remove temperature API if exists
+    if [ -f "/usr/local/bin/pve-temperature-api" ]; then
+        rm -f "/usr/local/bin/pve-temperature-api"
+        echo "✅ Removed temperature API"
+    fi
+    
+    # Remove any leftover extension files
     if [ -f "/usr/share/pve-manager/js/pve-temperature-monitor.js" ]; then
         rm -f "/usr/share/pve-manager/js/pve-temperature-monitor.js"
         echo "✅ Removed temperature extension"
@@ -541,16 +611,21 @@ test_temperature_monitoring() {
         echo "❌ API modifications missing"
     fi
     
-    if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
-        echo "✅ Web interface core modifications present"
-    elif [ -f "/usr/share/pve-manager/js/pve-temperature-monitor.js" ]; then
-        echo "✅ Temperature extension file present"
+    if [ -f "/usr/local/bin/pve-temperature-api" ]; then
+        echo "✅ Temperature API endpoint present"
+        echo "🧪 Testing API endpoint:"
+        /usr/local/bin/pve-temperature-api 2>/dev/null | head -10 || echo "❌ API test failed"
     else
-        echo "❌ Web interface modifications missing"
+        echo "❌ Temperature API missing"
     fi
     
-    if [ -f "/usr/share/pve-manager/css/pve-temperature.css" ]; then
-        echo "✅ Temperature CSS styles present"
+    echo "🔍 Checking Proxmox web interface modifications:"
+    if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
+        echo "✅ Web interface modifications present"
+        echo "🌡️  Temperature should appear in node summary page"
+    else
+        echo "❌ Web interface modifications missing"
+        echo "⚠️  Temperature will not appear in web interface"
     fi
 }
 
@@ -586,20 +661,24 @@ install_temperature_monitoring() {
     echo ""
     echo "✅ Temperature monitoring installation completed!"
     echo ""
-    echo "💡 Next steps:"
-    echo "1. Refresh your Proxmox web interface (Ctrl+F5)"
-    echo "2. Navigate to a node's summary page"
-    echo "3. Temperature information should now be displayed"
-    echo "4. If temperatures don't appear, check hardware sensor support"
+    echo "💡 How to check temperatures:"
+    echo "1. Command line: /usr/local/bin/pve-temp-monitor all"
+    echo "2. API endpoint: /usr/local/bin/pve-temperature-api"
+    echo "3. Proxmox API: pvesh get /nodes/\$(hostname)/status"
+    echo "4. Raw sensors: sensors"
+    echo ""
+    echo "⚠️  Web interface integration disabled for stability"
+    echo "   This prevents JavaScript errors in the browser"
     echo ""
     echo "🔧 Troubleshooting:"
     echo "   - Test sensors: sensors"
     echo "   - Test script: /usr/local/bin/pve-temp-monitor all"
+    echo "   - Check API: /usr/local/bin/pve-temperature-api"
     echo "   - Check logs: journalctl -u pveproxy -u pvedaemon"
     echo ""
     echo "📁 Backups are stored in: /root/pve_temperature_backup_*"
     echo ""
-    echo "🎉 Temperature monitoring is now active in your Proxmox dashboard!"
+    echo "🎉 Stable temperature monitoring is now active!"
 }
 
 # Function to repair temperature monitoring
