@@ -418,15 +418,46 @@ modify_web_interface() {
             }
 EOF
     
-    # Insert the temperature code after the found line
-    # We'll add it after the CPU section to keep it organized
-    local insert_after=$((cpu_line + 10))  # Add some buffer to find the right spot
+    # Try multiple approaches to find a safe insertion point
+    local actual_insert=""
     
-    # Find the next logical insertion point (after a closing brace or similar)
-    local actual_insert=$(sed -n "${cpu_line},$((cpu_line + 20))p" "$pvemanager_js" | grep -n "})" | head -1 | cut -d: -f1)
+    # Method 1: Look for a specific pattern in node summary
+    if [ -n "$cpu_line" ]; then
+        # Look for the end of the current items block
+        local context_lines=$(sed -n "$((cpu_line - 5)),$((cpu_line + 30))p" "$pvemanager_js")
+        local block_end=$(echo "$context_lines" | grep -n "})" | tail -1 | cut -d: -f1)
+        
+        if [ -n "$block_end" ]; then
+            actual_insert=$((cpu_line - 5 + block_end - 1))
+            echo "🔍 Method 1: Found insertion point at line $actual_insert"
+        fi
+    fi
     
-    if [ -n "$actual_insert" ]; then
-        actual_insert=$((cpu_line + actual_insert - 1))
+    # Method 2: If Method 1 fails, look for the last items.push in the file
+    if [ -z "$actual_insert" ]; then
+        local last_push=$(grep -n "items\.push" "$pvemanager_js" | tail -1 | cut -d: -f1)
+        if [ -n "$last_push" ]; then
+            actual_insert=$last_push
+            echo "🔍 Method 2: Using last items.push at line $actual_insert"
+        fi
+    fi
+    
+    # Method 3: If all else fails, look for a generic pattern
+    if [ -z "$actual_insert" ]; then
+        # Look for any function that seems to be building status items
+        local status_func=$(grep -n "function.*status\|status.*function" "$pvemanager_js" | head -1 | cut -d: -f1)
+        if [ -n "$status_func" ]; then
+            # Find the end of this function
+            local func_end=$(sed -n "$status_func,$((status_func + 100))p" "$pvemanager_js" | grep -n "^[[:space:]]*}" | head -1 | cut -d: -f1)
+            if [ -n "$func_end" ]; then
+                actual_insert=$((status_func + func_end - 2))
+                echo "🔍 Method 3: Using function end at line $actual_insert"
+            fi
+        fi
+    fi
+    
+    # If we found an insertion point, proceed
+    if [ -n "$actual_insert" ] && [ "$actual_insert" -gt 0 ]; then
         echo "🔍 Inserting temperature code after line $actual_insert"
         
         # Create the modified file
@@ -434,16 +465,165 @@ EOF
         cat /tmp/temperature_display.js >> /tmp/pvemanager_js_new
         tail -n +$((actual_insert + 1)) "$pvemanager_js" >> /tmp/pvemanager_js_new
         
-        # Replace the original file
-        mv /tmp/pvemanager_js_new "$pvemanager_js"
-        rm -f /tmp/temperature_display.js
-        
-        echo "✅ Web interface modified successfully"
-        echo "🌡️  Temperature will now appear in node summary page"
+        # Verify the file is valid (basic check)
+        if [ -s /tmp/pvemanager_js_new ]; then
+            # Replace the original file
+            mv /tmp/pvemanager_js_new "$pvemanager_js"
+            rm -f /tmp/temperature_display.js
+            
+            echo "✅ Web interface modified successfully"
+            echo "🌡️  Temperature will now appear in node summary page"
+        else
+            echo "❌ Generated file is empty, aborting modification"
+            rm -f /tmp/pvemanager_js_new /tmp/temperature_display.js
+            return 1
+        fi
     else
-        echo "❌ Could not find safe insertion point"
+        echo "❌ Could not find any safe insertion point"
+        echo "🔧 Creating alternative temperature display method..."
+        create_alternative_temperature_display
         return 1
     fi
+}
+
+# Function to create alternative temperature display
+create_alternative_temperature_display() {
+    echo "🔧 Creating alternative temperature display method..."
+    
+    # Create a simple temperature widget that can be manually added
+    cat > /usr/share/pve-manager/js/pve-temperature-widget.js << 'EOF'
+// Proxmox Temperature Widget
+// Manual integration for temperature display
+
+// Add this to your custom Proxmox modifications
+Ext.define('PVE.node.TemperatureWidget', {
+    extend: 'Ext.Component',
+    alias: 'widget.pveTemperatureWidget',
+    
+    html: '<div id="pve-temperature-display" style="padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; margin: 5px 0;">' +
+          '<div style="font-weight: bold; margin-bottom: 5px;">🌡️ System Temperature</div>' +
+          '<div id="cpu-temp">CPU: Loading...</div>' +
+          '<div id="disk-temp">Disk: Loading...</div>' +
+          '</div>',
+    
+    initComponent: function() {
+        var me = this;
+        me.callParent();
+        
+        // Start temperature monitoring
+        me.updateTemperature();
+        me.tempTask = Ext.TaskManager.start({
+            run: me.updateTemperature,
+            scope: me,
+            interval: 10000 // Update every 10 seconds
+        });
+    },
+    
+    updateTemperature: function() {
+        var me = this;
+        
+        Ext.Ajax.request({
+            url: '/nodes/' + me.nodename + '/status',
+            method: 'GET',
+            success: function(response) {
+                var data = Ext.decode(response.responseText).data;
+                if (data && data['thermal-state']) {
+                    var thermal = data['thermal-state'];
+                    
+                    if (thermal['cpu-thermal']) {
+                        Ext.get('cpu-temp').setHtml('CPU: ' + thermal['cpu-thermal'] + '°C');
+                    }
+                    
+                    if (thermal['disk-thermal']) {
+                        Ext.get('disk-temp').setHtml('Disk: ' + thermal['disk-thermal'] + '°C');
+                    }
+                }
+            },
+            failure: function() {
+                Ext.get('cpu-temp').setHtml('CPU: N/A');
+                Ext.get('disk-temp').setHtml('Disk: N/A');
+            }
+        });
+    },
+    
+    destroy: function() {
+        var me = this;
+        if (me.tempTask) {
+            Ext.TaskManager.stop(me.tempTask);
+        }
+        me.callParent();
+    }
+});
+EOF
+    
+    # Create a simple HTML page for temperature monitoring
+    cat > /usr/share/pve-manager/temperature-monitor.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Proxmox Temperature Monitor</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .temp-item { display: flex; justify-content: space-between; padding: 10px; margin: 5px 0; background: #f9f9f9; border-radius: 4px; }
+        .temp-label { font-weight: bold; }
+        .temp-value { color: #666; }
+        .refresh-btn { background: #007cbb; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        .refresh-btn:hover { background: #005a87; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🌡️ Proxmox Temperature Monitor</h2>
+        <div id="temperature-data">
+            <div class="temp-item">
+                <span class="temp-label">CPU Temperature:</span>
+                <span class="temp-value" id="cpu-temp">Loading...</span>
+            </div>
+            <div class="temp-item">
+                <span class="temp-label">Disk Temperature:</span>
+                <span class="temp-value" id="disk-temp">Loading...</span>
+            </div>
+        </div>
+        <button class="refresh-btn" onclick="updateTemperature()">Refresh</button>
+        <p><small>Auto-refresh every 30 seconds</small></p>
+    </div>
+
+    <script>
+        function updateTemperature() {
+            fetch('/api2/json/nodes/' + window.location.hostname + '/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.data && data.data['thermal-state']) {
+                        const thermal = data.data['thermal-state'];
+                        
+                        if (thermal['cpu-thermal']) {
+                            document.getElementById('cpu-temp').textContent = thermal['cpu-thermal'] + '°C';
+                        }
+                        
+                        if (thermal['disk-thermal']) {
+                            document.getElementById('disk-temp').textContent = thermal['disk-thermal'] + '°C';
+                        }
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('cpu-temp').textContent = 'Error';
+                    document.getElementById('disk-temp').textContent = 'Error';
+                });
+        }
+        
+        // Initial load and auto-refresh
+        updateTemperature();
+        setInterval(updateTemperature, 30000);
+    </script>
+</body>
+</html>
+EOF
+    
+    echo "✅ Alternative temperature display created"
+    echo "🌐 Access temperature monitor at: https://your-proxmox-ip:8006/temperature-monitor.html"
+    echo "📁 Widget file created: /usr/share/pve-manager/js/pve-temperature-widget.js"
 }
 
 # Function to restart Proxmox services
@@ -543,22 +723,15 @@ remove_temperature_monitoring() {
         echo "✅ Removed temperature monitoring script"
     fi
     
-    # Remove temperature API if exists
-    if [ -f "/usr/local/bin/pve-temperature-api" ]; then
-        rm -f "/usr/local/bin/pve-temperature-api"
-        echo "✅ Removed temperature API"
+    # Remove alternative temperature display files
+    if [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
+        rm -f "/usr/share/pve-manager/js/pve-temperature-widget.js"
+        echo "✅ Removed temperature widget"
     fi
     
-    # Remove any leftover extension files
-    if [ -f "/usr/share/pve-manager/js/pve-temperature-monitor.js" ]; then
-        rm -f "/usr/share/pve-manager/js/pve-temperature-monitor.js"
-        echo "✅ Removed temperature extension"
-    fi
-    
-    # Remove temperature CSS if exists
-    if [ -f "/usr/share/pve-manager/css/pve-temperature.css" ]; then
-        rm -f "/usr/share/pve-manager/css/pve-temperature.css"
-        echo "✅ Removed temperature CSS"
+    if [ -f "/usr/share/pve-manager/temperature-monitor.html" ]; then
+        rm -f "/usr/share/pve-manager/temperature-monitor.html"
+        echo "✅ Removed temperature monitor page"
     fi
     
     # Restart services
@@ -623,6 +796,9 @@ test_temperature_monitoring() {
     if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
         echo "✅ Web interface modifications present"
         echo "🌡️  Temperature should appear in node summary page"
+    elif [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
+        echo "✅ Alternative temperature widget available"
+        echo "🌐 Access at: https://$(hostname -I | awk '{print $1}'):8006/temperature-monitor.html"
     else
         echo "❌ Web interface modifications missing"
         echo "⚠️  Temperature will not appear in web interface"
@@ -663,22 +839,33 @@ install_temperature_monitoring() {
     echo ""
     echo "💡 How to check temperatures:"
     echo "1. Command line: /usr/local/bin/pve-temp-monitor all"
-    echo "2. API endpoint: /usr/local/bin/pve-temperature-api"
-    echo "3. Proxmox API: pvesh get /nodes/\$(hostname)/status"
-    echo "4. Raw sensors: sensors"
+    echo "2. Proxmox API: pvesh get /nodes/\$(hostname)/status"
+    echo "3. Raw sensors: sensors"
     echo ""
-    echo "⚠️  Web interface integration disabled for stability"
-    echo "   This prevents JavaScript errors in the browser"
+    
+    # Check if web interface was successfully modified
+    if grep -q "thermal-state" "/usr/share/pve-manager/js/pvemanagerlib.js" 2>/dev/null; then
+        echo "🌡️  Web interface integration: SUCCESS"
+        echo "   Temperature will appear in Proxmox node summary page"
+        echo "   Refresh your browser (Ctrl+F5) to see changes"
+    elif [ -f "/usr/share/pve-manager/js/pve-temperature-widget.js" ]; then
+        echo "🌐 Alternative web interface available:"
+        echo "   Access at: https://$(hostname -I | awk '{print $1}'):8006/temperature-monitor.html"
+        echo "   Widget file: /usr/share/pve-manager/js/pve-temperature-widget.js"
+    else
+        echo "⚠️  Web interface integration: FAILED"
+        echo "   Temperature available via command line only"
+    fi
+    
     echo ""
     echo "🔧 Troubleshooting:"
     echo "   - Test sensors: sensors"
     echo "   - Test script: /usr/local/bin/pve-temp-monitor all"
-    echo "   - Check API: /usr/local/bin/pve-temperature-api"
     echo "   - Check logs: journalctl -u pveproxy -u pvedaemon"
     echo ""
     echo "📁 Backups are stored in: /root/pve_temperature_backup_*"
     echo ""
-    echo "🎉 Stable temperature monitoring is now active!"
+    echo "🎉 Temperature monitoring is now active!"
 }
 
 # Function to repair temperature monitoring
