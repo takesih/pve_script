@@ -99,8 +99,10 @@ Script para integrar o driver da placa de rede Realtek R8168 no ISO Proxmox 8.4.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Ferramenta de Monitoramento de Temperatura Proxmox VE
+### 6. Ferramenta de Monitoramento de Temperatura Proxmox VE ⚠️ **EM TESTE - NÃO USAR**
 Script para adicionar monitoramento em tempo real de temperatura de CPU e disco ao painel do Proxmox VE.
+
+**⚠️ AVISO: Este script está atualmente em teste e pode danificar seu sistema. NÃO USE!**
 
 **Recursos:**
 - **Detecção de Sensores de Hardware**: Detecção automática de sensores usando lm-sensors
@@ -114,6 +116,8 @@ Script para adicionar monitoramento em tempo real de temperatura de CPU e disco 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
 ```
+
+**🚨 CRÍTICO: Este script está em teste e modifica arquivos do sistema Proxmox. NÃO use em ambientes de produção!**
 
 **Notas Importantes:**
 - Funciona apenas em hardware físico (VMs não têm sensores de temperatura)

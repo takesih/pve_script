@@ -99,8 +99,10 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE温度监控工具
+### 6. Proxmox VE温度监控工具 ⚠️ **测试中 - 禁止使用**
 向Proxmox VE仪表板添加实时CPU和磁盘温度监控的脚本。
+
+**⚠️ 警告：此脚本目前正在测试中，可能会损坏您的系统。请勿使用！**
 
 **功能：**
 - **硬件传感器检测**：使用lm-sensors自动检测传感器
@@ -114,6 +116,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
 ```
+
+**🚨 重要：此脚本正在测试中，会修改Proxmox系统文件。请勿在生产环境中使用！**
 
 **重要说明：**
 - 仅在物理硬件上工作（虚拟机没有温度传感器）

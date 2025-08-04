@@ -99,8 +99,10 @@ Proxmox 8.4 ISO에 Realtek R8168 랜카드 드라이버를 통합하는 스크�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE 온도 모니터링 도구
+### 6. Proxmox VE 온도 모니터링 도구 ⚠️ **테스트 중 - 사용 금지**
 Proxmox VE 대시보드에 실시간 CPU 및 디스크 온도 모니터링을 추가하는 스크립트입니다.
+
+**⚠️ 경고: 이 스크립트는 현재 테스트 중이며 시스템 파괴 위험이 있습니다. 사용하지 마세요!**
 
 **기능:**
 - **하드웨어 센서 감지**: lm-sensors를 이용한 자동 센서 감지
@@ -114,6 +116,8 @@ Proxmox VE 대시보드에 실시간 CPU 및 디스크 온도 모니터링을 �
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
 ```
+
+**🚨 중요: 이 스크립트는 테스트 중이며 Proxmox 시스템 파일을 수정합니다. 프로덕션 환경에서 사용하지 마세요!**
 
 **주의사항:**
 - 물리적 하드웨어에서만 작동 (가상머신에서는 센서 없음)

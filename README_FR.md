@@ -99,8 +99,10 @@ Script pour intégrer le pilote de carte réseau Realtek R8168 dans l'ISO Proxmo
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Outil de Surveillance de Température Proxmox VE
+### 6. Outil de Surveillance de Température Proxmox VE ⚠️ **EN TEST - NE PAS UTILISER**
 Script pour ajouter la surveillance en temps réel de la température CPU et disque au tableau de bord Proxmox VE.
+
+**⚠️ AVERTISSEMENT : Ce script est actuellement en test et peut endommager votre système. NE L'UTILISEZ PAS !**
 
 **Fonctionnalités :**
 - **Détection de Capteurs Matériels** : Détection automatique des capteurs avec lm-sensors
@@ -114,6 +116,8 @@ Script pour ajouter la surveillance en temps réel de la température CPU et dis
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
 ```
+
+**🚨 CRITIQUE : Ce script est en test et modifie les fichiers système Proxmox. N'UTILISEZ PAS dans des environnements de production !**
 
 **Notes Importantes :**
 - Fonctionne uniquement sur matériel physique (les VMs n'ont pas de capteurs température)

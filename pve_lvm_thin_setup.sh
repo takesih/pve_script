@@ -55,9 +55,37 @@ check_required_packages() {
     echo ""
 }
 
+# Function to remove Proxmox storage configurations
+remove_proxmox_storage_config() {
+    echo "🔧 Removing Proxmox storage configurations..."
+    
+    # Remove local-lvm storage configuration from Proxmox
+    if pvesm status --storage local-lvm >/dev/null 2>&1; then
+        echo "📝 Removing local-lvm storage configuration..."
+        pvesm remove local-lvm 2>/dev/null || true
+    fi
+    
+    # Update storage.cfg to remove local-lvm references
+    if [ -f "/etc/pve/storage.cfg" ]; then
+        echo "📝 Updating storage configuration..."
+        # Create backup
+        cp /etc/pve/storage.cfg /etc/pve/storage.cfg.backup.$(date +%Y%m%d_%H%M%S)
+        
+        # Remove local-lvm section
+        sed -i '/^dir: local-lvm$/,/^$/d' /etc/pve/storage.cfg 2>/dev/null || true
+        sed -i '/^lvm: local-lvm$/,/^$/d' /etc/pve/storage.cfg 2>/dev/null || true
+        sed -i '/^lvmthin: local-lvm$/,/^$/d' /etc/pve/storage.cfg 2>/dev/null || true
+    fi
+    
+    echo "✅ Proxmox storage configurations updated"
+}
+
 # Function to schedule boot-time resize
 schedule_boot_resize() {
     echo "🔧 Setting up automatic boot-time resize..."
+    
+    # Remove Proxmox storage configurations first
+    remove_proxmox_storage_config
     
     # Create the resize script with improved error handling
     cat > /usr/local/bin/pve-boot-resize.sh << 'EOF'
@@ -88,13 +116,25 @@ log_message "Starting boot-time root filesystem resize..."
 log_message "Target size: $TARGET_ROOT_SIZE"
 log_message "Original size: $ORIGINAL_SIZE"
 
-# Wait for LVM to be ready
+# Wait for LVM to be ready and activate if needed
 log_message "Waiting for LVM to be ready..."
 sleep 5
+
+# Ensure LVM is activated
+log_message "Activating LVM volume group..."
+vgchange -ay pve || {
+    log_message "ERROR: Failed to activate LVM volume group"
+    exit 1
+}
+
+# Wait a bit more for activation
+sleep 3
 
 # Check if LVM volume exists
 if ! lvs /dev/pve/root >/dev/null 2>&1; then
     log_message "ERROR: LVM volume /dev/pve/root not found"
+    log_message "Available volumes:"
+    lvs || true
     exit 1
 fi
 
@@ -136,12 +176,26 @@ cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d_%H%M%S)
 
 # Try to stop services that might interfere
 log_message "Stopping services that might interfere..."
-systemctl stop pveproxy pvedaemon pve-cluster || true
+systemctl stop pveproxy pvedaemon pve-cluster pve-firewall pve-ha-lrm pve-ha-crm || true
+
+# Stop additional services that might lock the filesystem
+systemctl stop cron rsyslog || true
 
 # Kill processes that might be using the filesystem
 log_message "Terminating processes that might interfere..."
+# First try gentle approach
+lsof / 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | while read pid; do
+    [ "$pid" != "$$" ] && kill -TERM "$pid" 2>/dev/null || true
+done
+sleep 3
+
+# Then force kill if needed
 fuser -km / || true
 sleep 2
+
+# Ensure no swap is active on the root volume
+log_message "Disabling swap if active..."
+swapoff -a || true
 
 # Sync and remount root as read-only
 log_message "Syncing filesystem..."
@@ -165,21 +219,42 @@ if ! e2fsck -f -y /dev/pve/root; then
     exit 1
 fi
 
-# Resize filesystem first
-log_message "Resizing filesystem to $TARGET_ROOT_SIZE..."
-if ! resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"; then
+# Get filesystem block size and calculate blocks needed
+log_message "Calculating filesystem parameters..."
+block_size=$(tune2fs -l /dev/pve/root | grep "Block size" | awk '{print $3}')
+target_size_bytes=$(echo "$TARGET_ROOT_SIZE" | sed 's/G//' | awk '{print $1 * 1024 * 1024 * 1024}')
+target_blocks=$((target_size_bytes / block_size))
+
+log_message "Block size: $block_size bytes"
+log_message "Target size: $target_size_bytes bytes ($target_blocks blocks)"
+
+# Resize filesystem first with block count
+log_message "Resizing filesystem to $target_blocks blocks..."
+if ! resize2fs /dev/pve/root "$target_blocks"; then
     log_message "ERROR: Filesystem resize failed"
-    mount -o remount,rw /
-    exit 1
+    log_message "Attempting with size specification..."
+    if ! resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"; then
+        log_message "ERROR: Filesystem resize failed completely"
+        mount -o remount,rw /
+        exit 1
+    fi
 fi
 
 # Resize logical volume
 log_message "Resizing logical volume to $TARGET_ROOT_SIZE..."
-if ! lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root; then
+if ! lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root -y; then
     log_message "ERROR: Logical volume resize failed"
+    log_message "Attempting to resize filesystem back..."
+    resize2fs /dev/pve/root || true
     mount -o remount,rw /
     exit 1
 fi
+
+# Final filesystem check and resize to fit the new LV size
+log_message "Final filesystem resize to fit logical volume..."
+resize2fs /dev/pve/root || {
+    log_message "WARNING: Final filesystem resize failed, but LV resize succeeded"
+}
 
 # Remount root as read-write
 log_message "Remounting root filesystem as read-write..."
@@ -226,6 +301,24 @@ if [[ -n "$CREATE_DATA_VOLUME" && "$CREATE_DATA_VOLUME" == "true" ]]; then
             
             if lvcreate -V ${thin_volume_size}G -T pve/data -n data; then
                 log_message "LVM-thin data volume created successfully (${thin_volume_size}G)"
+                
+                # Configure Proxmox storage for the new LVM-thin volume
+                log_message "Configuring Proxmox storage for LVM-thin..."
+                
+                # Wait for the volume to be ready
+                sleep 2
+                
+                # Add LVM-thin storage configuration
+                cat >> /etc/pve/storage.cfg << STORAGE_EOF
+
+lvmthin: local-lvm
+	thinpool data
+	vgname pve
+	content vztmpl,backup,iso,rootdir,images
+	nodes $(hostname)
+STORAGE_EOF
+                
+                log_message "Proxmox LVM-thin storage configuration added"
                 log_message "LVM-thin setup completed during boot!"
                 log_message "pve_lvm_resize.sh system recovery completed successfully!"
             else
@@ -254,11 +347,12 @@ EOF
 [Unit]
 Description=Proxmox Boot-time Root Filesystem Resize
 DefaultDependencies=false
-After=systemd-remount-fs.service lvm2-activation.service
-Before=local-fs.target systemd-fsck-root.service
-Conflicts=shutdown.target
+After=systemd-remount-fs.service lvm2-activation.service lvm2-monitor.service
+Before=local-fs.target systemd-fsck-root.service multi-user.target
+Conflicts=shutdown.target reboot.target halt.target
 RequiresMountsFor=/
 ConditionPathExists=/etc/pve-boot-resize.conf
+ConditionVirtualization=!container
 
 [Service]
 Type=oneshot
@@ -266,11 +360,13 @@ ExecStart=/usr/local/bin/pve-boot-resize.sh
 StandardOutput=journal+console
 StandardError=journal+console
 RemainAfterExit=yes
-TimeoutSec=300
+TimeoutSec=600
 KillMode=none
+SuccessExitStatus=0
+FailureAction=none
 
 [Install]
-WantedBy=local-fs.target
+WantedBy=sysinit.target
 EOF
 
     # Create configuration file
@@ -284,6 +380,53 @@ EOF
     # Enable the service
     systemctl enable pve-boot-resize.service
     
+    # Create a fallback script for manual execution
+    cat > /usr/local/bin/pve-manual-resize.sh << 'EOF'
+#!/bin/bash
+# Manual fallback script for root filesystem resize
+echo "Manual Root Filesystem Resize Script"
+echo "This script should be run from a rescue environment"
+echo ""
+
+if [ ! -f "/etc/pve-boot-resize.conf" ]; then
+    echo "ERROR: No resize configuration found"
+    exit 1
+fi
+
+source /etc/pve-boot-resize.conf
+echo "Target size: $TARGET_ROOT_SIZE"
+echo ""
+
+echo "Steps to perform manually:"
+echo "1. Boot from Proxmox installation media or live Linux"
+echo "2. Activate LVM: vgchange -ay pve"
+echo "3. Check filesystem: e2fsck -f /dev/pve/root"
+echo "4. Shrink filesystem: resize2fs /dev/pve/root $TARGET_ROOT_SIZE"
+echo "5. Shrink LV: lvresize -L $TARGET_ROOT_SIZE /dev/pve/root"
+echo "6. Remove config: rm -f /etc/pve-boot-resize.conf"
+echo "7. Reboot to normal system"
+echo ""
+read -p "Press Enter to continue or Ctrl+C to cancel..."
+
+echo "Activating LVM..."
+vgchange -ay pve
+
+echo "Checking filesystem..."
+e2fsck -f /dev/pve/root
+
+echo "Resizing filesystem..."
+resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"
+
+echo "Resizing logical volume..."
+lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root
+
+echo "Cleaning up..."
+rm -f /etc/pve-boot-resize.conf
+
+echo "Manual resize completed!"
+EOF
+    chmod +x /usr/local/bin/pve-manual-resize.sh
+    
     echo "✅ Boot-time resize scheduled successfully!"
     echo ""
     echo "📋 What happens next:"
@@ -295,6 +438,10 @@ EOF
     echo "🔍 Monitoring:"
     echo "   - Service status: systemctl status pve-boot-resize.service"
     echo "   - Resize log: /var/log/pve-boot-resize.log"
+    echo ""
+    echo "🆘 Fallback option:"
+    echo "   If boot resize fails, use: /usr/local/bin/pve-manual-resize.sh"
+    echo "   (Run from rescue environment)"
     echo ""
     
     # For pve_lvm_resize.sh systems, automatically reboot
@@ -772,7 +919,56 @@ setup_lvm_thin_data() {
     lvcreate -V ${thin_volume_size}G -T pve/data -n data
     
     echo "✅ LVM-thin data volume setup completed!"
+    
+    # Configure Proxmox storage for the new LVM-thin volume
+    echo "🔧 Configuring Proxmox storage..."
+    configure_proxmox_storage
 }
+
+# Function to configure Proxmox storage
+configure_proxmox_storage() {
+    echo "📝 Configuring Proxmox storage for LVM-thin..."
+    
+    # Remove any existing local-lvm configuration
+    if pvesm status --storage local-lvm >/dev/null 2>&1; then
+        echo "📝 Removing existing local-lvm storage configuration..."
+        pvesm remove local-lvm 2>/dev/null || true
+    fi
+    
+    # Wait for LVM-thin volume to be ready
+    sleep 2
+    
+    # Check if storage.cfg exists and create backup
+    if [ -f "/etc/pve/storage.cfg" ]; then
+        cp /etc/pve/storage.cfg /etc/pve/storage.cfg.backup.$(date +%Y%m%d_%H%M%S)
+    fi
+    
+    # Add LVM-thin storage configuration
+    if ! grep -q "lvmthin: local-lvm" /etc/pve/storage.cfg 2>/dev/null; then
+        echo "📝 Adding LVM-thin storage configuration..."
+        cat >> /etc/pve/storage.cfg << 'STORAGE_EOF'
+
+lvmthin: local-lvm
+	thinpool data
+	vgname pve
+	content vztmpl,backup,iso,rootdir,images
+STORAGE_EOF
+        echo "✅ LVM-thin storage configuration added"
+    else
+        echo "✅ LVM-thin storage configuration already exists"
+    fi
+    
+    # Restart PVE storage daemon to reload configuration
+    echo "🔄 Restarting PVE storage daemon..."
+    systemctl restart pve-storage || true
+    
+    # Verify storage configuration
+    sleep 3
+    if pvesm status --storage local-lvm >/dev/null 2>&1; then
+        echo "✅ LVM-thin storage is now available in Proxmox"
+    else
+        echo "⚠️  LVM-thin storage may need manual configuration in Proxmox web interface"
+    fi
 
 # Main execution
 echo "📊 Checking current LVM status..."

@@ -99,8 +99,10 @@ Skript zur Integration des Realtek R8168 Netzwerkadapter-Treibers in das Proxmox
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE Temperaturüberwachungs-Tool
+### 6. Proxmox VE Temperaturüberwachungs-Tool ⚠️ **IM TEST - NICHT VERWENDEN**
 Skript zum Hinzufügen von Echtzeit-CPU- und Festplatten-Temperaturüberwachung zum Proxmox VE Dashboard.
+
+**⚠️ WARNUNG: Dieses Skript befindet sich derzeit im Test und kann Ihr System beschädigen. VERWENDEN SIE ES NICHT!**
 
 **Funktionen:**
 - **Hardware-Sensor-Erkennung**: Automatische Sensor-Erkennung mit lm-sensors
@@ -114,6 +116,8 @@ Skript zum Hinzufügen von Echtzeit-CPU- und Festplatten-Temperaturüberwachung 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
 ```
+
+**🚨 KRITISCH: Dieses Skript befindet sich im Test und ändert Proxmox-Systemdateien. NICHT in Produktionsumgebungen verwenden!**
 
 **Wichtige Hinweise:**
 - Funktioniert nur auf physischer Hardware (VMs haben keine Temperatursensoren)
