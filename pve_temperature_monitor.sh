@@ -438,79 +438,84 @@ modify_web_interface() {
     sed -n "$((cpu_line - 10)),$((cpu_line + 10))p" "$pvemanager_js" >> "$debug_log"
     echo "" >> "$debug_log"
     
-    # Create temperature display code that matches Proxmox's existing pattern
+    # Create temperature display code that matches Proxmox's node status pattern
     cat > /tmp/temperature_display.js << 'EOF'
-            
-            // Add temperature monitoring to node status
-            if (data && data['thermal-state']) {
-                var thermal = data['thermal-state'];
-                
-                // CPU Temperature
-                if (thermal['cpu-thermal']) {
-                    items.push({
-                        itemId: 'thermal-cpu',
-                        colspan: 2,
-                        printBar: false,
-                        title: gettext('CPU Temperature'),
-                        textField: 'thermal-cpu',
-                        renderer: function(value) {
-                            return thermal['cpu-thermal'] + '°C';
-                        }
-                    });
-                }
-                
-                // Disk Temperature  
-                if (thermal['disk-thermal']) {
-                    items.push({
-                        itemId: 'thermal-disk',
-                        colspan: 2, 
-                        printBar: false,
-                        title: gettext('Disk Temperature'),
-                        textField: 'thermal-disk',
-                        renderer: function(value) {
-                            return thermal['disk-thermal'] + '°C';
-                        }
-                    });
-                }
-            }
+},{
+    itemId: 'cpu-temperature',
+    iconCls: 'fa fa-fw fa-thermometer-half pmx-icon',
+    title: gettext('CPU Temperature'),
+    printBar: false,
+    textField: 'cpu-temperature',
+    renderer: function(value, metaData, record) {
+        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['cpu-thermal']) {
+            return record.data['thermal-state']['cpu-thermal'] + '°C';
+        }
+        return 'N/A';
+    }
+},{
+    itemId: 'disk-temperature',
+    iconCls: 'fa fa-fw fa-hdd-o pmx-icon',
+    title: gettext('Disk Temperature'),
+    printBar: false,
+    textField: 'disk-temperature',
+    renderer: function(value, metaData, record) {
+        if (record.data && record.data['thermal-state'] && record.data['thermal-state']['disk-thermal']) {
+            return record.data['thermal-state']['disk-thermal'] + '°C';
+        }
+        return 'N/A';
+    }
 EOF
     
     # Try multiple approaches to find a safe insertion point
     local actual_insert=""
     
-    # Method 1: Look for a specific pattern in node summary
+    # Method 1: Look for CPU usage section specifically (most reliable)
     if [ -n "$cpu_line" ]; then
-        # Look for the end of the current items block
-        local context_lines=$(sed -n "$((cpu_line - 5)),$((cpu_line + 30))p" "$pvemanager_js")
-        local block_end=$(echo "$context_lines" | grep -n "})" | tail -1 | cut -d: -f1)
+        # Find the items.push pattern near the CPU usage section
+        local cpu_context_start=$((cpu_line - 10))
+        local cpu_context_end=$((cpu_line + 50))
         
-        if [ -n "$block_end" ]; then
-            actual_insert=$((cpu_line - 5 + block_end - 1))
-            echo "🔍 Method 1: Found insertion point at line $actual_insert"
+        # Look for items.push within the CPU context area
+        local cpu_items_push=$(sed -n "${cpu_context_start},${cpu_context_end}p" "$pvemanager_js" | grep -n "items\.push" | tail -1 | cut -d: -f1)
+        
+        if [ -n "$cpu_items_push" ]; then
+            actual_insert=$((cpu_context_start + cpu_items_push - 1))
+            echo "🔍 Method 1: Found CPU context items.push at line $actual_insert"
         fi
     fi
     
-    # Method 2: If Method 1 fails, look for the last items.push in the file
+    # Method 2: If Method 1 fails, look for node status items pattern
     if [ -z "$actual_insert" ]; then
-        local last_push=$(grep -n "items\.push" "$pvemanager_js" | tail -1 | cut -d: -f1)
-        if [ -n "$last_push" ]; then
-            actual_insert=$last_push
-            echo "🔍 Method 2: Using last items.push at line $actual_insert"
+        # Look for the specific pattern that indicates node status items
+        local status_pattern=$(grep -n "itemId.*memory.*iconCls.*fa.*memory" "$pvemanager_js" | head -1 | cut -d: -f1)
+        if [ -n "$status_pattern" ]; then
+            # Insert before the memory section
+            actual_insert=$((status_pattern - 1))
+            echo "🔍 Method 2: Using memory section pattern at line $actual_insert"
         fi
     fi
     
-    # Method 3: If all else fails, look for a generic pattern
+    # Method 3: Look for the exact node status items pattern
     if [ -z "$actual_insert" ]; then
-        # Look for any function that seems to be building status items
-        local status_func=$(grep -n "function.*status\|status.*function" "$pvemanager_js" | head -1 | cut -d: -f1)
-        if [ -n "$status_func" ]; then
-            # Find the end of this function
-            local func_end=$(sed -n "$status_func,$((status_func + 100))p" "$pvemanager_js" | grep -n "^[[:space:]]*}" | head -1 | cut -d: -f1)
-            if [ -n "$func_end" ]; then
-                actual_insert=$((status_func + func_end - 2))
-                echo "🔍 Method 3: Using function end at line $actual_insert"
+        # Look for the specific node status items structure
+        local node_status_start=$(grep -n "itemId.*cpu.*iconCls.*processor" "$pvemanager_js" | head -1 | cut -d: -f1)
+        if [ -n "$node_status_start" ]; then
+            # Find the next item after CPU (usually memory)
+            local next_item=$(sed -n "$((node_status_start + 1)),$((node_status_start + 20))p" "$pvemanager_js" | grep -n "},{" | head -1 | cut -d: -f1)
+            if [ -n "$next_item" ]; then
+                actual_insert=$((node_status_start + next_item - 1))
+                echo "🔍 Method 3: Using node status pattern at line $actual_insert"
             fi
         fi
+    fi
+    
+    # Method 4: Fallback to safe location
+    if [ -z "$actual_insert" ]; then
+        echo "❌ All methods failed, using fallback approach"
+        echo "ERROR: All insertion methods failed" >> "$debug_log"
+        echo "🔧 Creating alternative temperature display method..."
+        create_alternative_temperature_display
+        return 1
     fi
     
     # If we found an insertion point, proceed
@@ -557,9 +562,27 @@ EOF
             
             # Check for syntax issues in the inserted area
             local insert_area=$(sed -n "$((actual_insert - 2)),$((actual_insert + 20))p" /tmp/pvemanager_js_new)
+            
+            # Check for common JavaScript syntax issues
             if echo "$insert_area" | grep -q "&&.*{"; then
                 syntax_errors="Potential '&&' syntax issue detected"
                 echo "WARNING: $syntax_errors" >> "$debug_log"
+            fi
+            
+            # Check for proper object structure
+            if echo "$insert_area" | grep -q "if.*data.*thermal-state"; then
+                syntax_errors="Conditional logic in wrong context"
+                echo "WARNING: $syntax_errors" >> "$debug_log"
+            fi
+            
+            # Check for items.push in wrong context
+            if echo "$insert_area" | grep -q "items\.push" && ! echo "$insert_area" | grep -q "me\.items\.push"; then
+                # Verify we're in the right context for items.push
+                local context_check=$(sed -n "$((actual_insert - 20)),$((actual_insert + 5))p" /tmp/pvemanager_js_new)
+                if ! echo "$context_check" | grep -q "items.*=.*\["; then
+                    syntax_errors="items.push used without proper items array context"
+                    echo "WARNING: $syntax_errors" >> "$debug_log"
+                fi
             fi
             
             if [ -n "$syntax_errors" ]; then
