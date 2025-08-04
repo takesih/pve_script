@@ -2,7 +2,7 @@
 
 # Proxmox VE Temperature Monitor Setup Script
 # Adds real-time temperature monitoring to Proxmox VE dashboard
-# Version: 2025-01-08 01:10
+# Version: 2025-01-08 01:20
 # Author: Proxmox Temperature Monitor Tool
 
 set -e
@@ -192,21 +192,38 @@ modify_proxmox_api() {
     if (-x '/usr/bin/sensors') {
         my $sensors_output = `sensors 2>/dev/null`;
         if ($sensors_output) {
-            # Parse CPU temperature
-            if ($sensors_output =~ /Core\s+\d+:\s+\+?(\d+(?:\.\d+)?)\s*°?C/i) {
+            # Parse CPU temperature - try multiple patterns
+            if ($sensors_output =~ /Tctl:\s*\+?(\d+(?:\.\d+)?)\s*°?C/i) {
+                $thermal->{'cpu-thermal'} = $1;
+            } elsif ($sensors_output =~ /Core\s+\d+:\s+\+?(\d+(?:\.\d+)?)\s*°?C/i) {
                 $thermal->{'cpu-thermal'} = $1;
             } elsif ($sensors_output =~ /CPU\s*Temperature:\s*\+?(\d+(?:\.\d+)?)\s*°?C/i) {
                 $thermal->{'cpu-thermal'} = $1;
-            } elsif ($sensors_output =~ /Tctl:\s*\+?(\d+(?:\.\d+)?)\s*°?C/i) {
+            } elsif ($sensors_output =~ /k10temp-pci-00c3.*?Tctl:\s*\+?(\d+(?:\.\d+)?)\s*°?C/is) {
                 $thermal->{'cpu-thermal'} = $1;
             }
         }
     }
     
-    # Get disk temperatures from smartctl
-    if (-x '/usr/sbin/smartctl') {
+    # Get disk temperatures from sensors and smartctl
+    my $max_disk_temp = 0;
+    
+    # First try sensors for NVMe temperatures
+    if (-x '/usr/bin/sensors') {
+        my $sensors_output = `sensors 2>/dev/null`;
+        if ($sensors_output) {
+            # Parse NVMe temperatures from sensors
+            if ($sensors_output =~ /nvme-pci-0100.*?Composite:\s*\+?(\d+(?:\.\d+)?)\s*°?C/is) {
+                $max_disk_temp = $1;
+            } elsif ($sensors_output =~ /nvme.*?Composite:\s*\+?(\d+(?:\.\d+)?)\s*°?C/is) {
+                $max_disk_temp = $1;
+            }
+        }
+    }
+    
+    # Fallback to smartctl if no sensor data
+    if ($max_disk_temp == 0 && -x '/usr/sbin/smartctl') {
         my @disks = glob('/dev/sd* /dev/nvme*');
-        my $max_disk_temp = 0;
         
         foreach my $disk (@disks) {
             next unless -b $disk;
@@ -220,9 +237,9 @@ modify_proxmox_api() {
                 }
             }
         }
-        
-        $thermal->{'disk-thermal'} = $max_disk_temp if $max_disk_temp > 0;
     }
+    
+    $thermal->{'disk-thermal'} = $max_disk_temp if $max_disk_temp > 0;
     
     $res->{'thermal-state'} = $thermal if %$thermal;
 EOF
