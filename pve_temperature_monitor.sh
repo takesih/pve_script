@@ -501,9 +501,13 @@ EOF
             return 1
         fi
     fi
-                echo "Method 3 failed: No CPU reference available" >> "$debug_log"
-            fi
-        fi
+    
+    # Method 4: Prevent fallback to wrong location
+    if [ -z "$actual_insert" ]; then
+        echo "❌ All methods failed to find insertion point"
+        echo "ERROR: All insertion methods failed" >> "$debug_log"
+        echo "❌ Cannot modify web interface - temperature will be available via command line only"
+        return 1
     fi
     
     # Method 4: Prevent fallback to wrong location
