@@ -442,7 +442,7 @@ configure_grub_pe_boot() {
 exec tail -n +3 $0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
-    set root=(hd0,1)
+    set root=(hd0,gpt1)
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
 }
