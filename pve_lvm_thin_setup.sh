@@ -76,21 +76,28 @@ get_size_configuration() {
     
     # Provide different options based on system type
     if [[ "$SYSTEM_TYPE" == "post_resize" || "$SYSTEM_TYPE" == "limited_space" ]]; then
+        # Calculate safe minimum size based on current usage
+        current_usage=$(df / | awk 'NR==2 {print $3}')
+        current_usage_gb=$(echo "scale=0; $current_usage / 1024 / 1024 + 5" | bc)  # Add 5GB buffer
+        
         echo "🔧 Size Configuration Options (Root volume will be shrunk):"
-        echo "1. Balanced (Root: 20GB, Data: remaining space)"
-        echo "2. Root focused (Root: 30GB, Data: remaining space)"
-        echo "3. Data focused (Root: 15GB, Data: remaining space)"
+        echo "   Current root usage: $(echo "scale=1; $current_usage / 1024 / 1024" | bc)GB"
+        echo "   Recommended minimum: ${current_usage_gb}GB"
+        echo ""
+        echo "1. Safe minimum (Root: ${current_usage_gb}GB, Data: remaining space)"
+        echo "2. Balanced (Root: 30GB, Data: remaining space) - Recommended"
+        echo "3. Conservative (Root: 40GB, Data: remaining space)"
         echo "4. Custom sizes"
-        echo "5. Percentage based (Root: 25%, Data: 75%)"
+        echo "5. Skip shrinking (keep current root size, create thin data volume)"
         echo ""
         
         read -p "Select option (1-5): " size_option
         
         case $size_option in
             1)
-                ROOT_SIZE="20G"
+                ROOT_SIZE="${current_usage_gb}G"
                 DATA_SIZE="remaining"
-                echo "✅ Selected: Root 20GB, Data remaining space"
+                echo "✅ Selected: Root ${current_usage_gb}GB (safe minimum), Data remaining space"
                 ;;
             2)
                 ROOT_SIZE="30G"
@@ -98,23 +105,24 @@ get_size_configuration() {
                 echo "✅ Selected: Root 30GB, Data remaining space"
                 ;;
             3)
-                ROOT_SIZE="15G"
+                ROOT_SIZE="40G"
                 DATA_SIZE="remaining"
-                echo "✅ Selected: Root 15GB, Data remaining space"
+                echo "✅ Selected: Root 40GB, Data remaining space"
                 ;;
             4)
+                echo "💡 Minimum recommended size: ${current_usage_gb}GB"
                 read -p "Enter root volume size (e.g., 25G): " ROOT_SIZE
                 read -p "Enter data volume size (e.g., 100G or 'remaining'): " DATA_SIZE
                 echo "✅ Selected: Root ${ROOT_SIZE}, Data ${DATA_SIZE}"
                 ;;
             5)
-                ROOT_SIZE="25%"
-                DATA_SIZE="75%"
-                echo "✅ Selected: Root 25%, Data 75%"
+                ROOT_SIZE="current"
+                DATA_SIZE="remaining"
+                echo "✅ Selected: Keep current root size, Data remaining space"
                 ;;
             *)
                 echo "❌ Invalid option. Using balanced configuration."
-                ROOT_SIZE="20G"
+                ROOT_SIZE="30G"
                 DATA_SIZE="remaining"
                 ;;
         esac
@@ -159,6 +167,9 @@ calculate_sizes() {
     if [[ "$ROOT_SIZE" == *"%" ]]; then
         local root_percent=${ROOT_SIZE%\%}
         ROOT_SIZE_CALC=$(echo "scale=0; $total_vg_size * $root_percent / 100" | bc)G
+    elif [[ "$ROOT_SIZE" == "current" ]]; then
+        local current_root_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+        ROOT_SIZE_CALC="${current_root_size}G"
     else
         ROOT_SIZE_CALC="$ROOT_SIZE"
     fi
@@ -185,6 +196,12 @@ resize_root_volume() {
     current_root_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
     target_root_size=$(echo "$ROOT_SIZE_CALC" | sed 's/G//')
     
+    # Skip resizing if keeping current size
+    if [[ "$ROOT_SIZE" == "current" ]]; then
+        echo "✅ Keeping current root volume size (${current_root_size}G)"
+        return 0
+    fi
+    
     if (( $(echo "$current_root_size > $target_root_size" | bc -l) )); then
         echo "🔄 Shrinking root volume from ${current_root_size}G to ${target_root_size}G..."
         
@@ -192,22 +209,59 @@ resize_root_volume() {
         current_usage=$(df / | awk 'NR==2 {print $3}')
         current_usage_gb=$(echo "scale=2; $current_usage / 1024 / 1024" | bc)
         
-        if (( $(echo "$current_usage_gb > $target_root_size - 2" | bc -l) )); then
+        echo "📊 Filesystem usage analysis:"
+        echo "   Current usage: ${current_usage_gb}GB"
+        echo "   Target size: ${target_root_size}GB"
+        echo "   Available after shrink: $(echo "scale=2; $target_root_size - $current_usage_gb" | bc)GB"
+        
+        if (( $(echo "$current_usage_gb > $target_root_size - 3" | bc -l) )); then
             echo "❌ Error: Current filesystem usage (${current_usage_gb}GB) is too close to target size (${target_root_size}GB)"
-            echo "   Need at least 2GB free space for safe operation"
-            echo "   Please clean up files or choose a larger root size"
+            echo "   Need at least 3GB free space for safe operation"
+            echo ""
+            echo "💡 Options:"
+            echo "   1. Clean up files to free space"
+            echo "   2. Choose a larger root size (recommended: $(echo "scale=0; $current_usage_gb + 5" | bc)GB or more)"
+            echo "   3. Cancel and run cleanup first"
+            echo ""
+            read -p "Do you want to continue anyway? (NOT RECOMMENDED) (y/N): " force_continue
+            if [[ "$force_continue" != "y" && "$force_continue" != "Y" ]]; then
+                echo "❌ Operation cancelled for safety."
+                exit 1
+            fi
+            echo "⚠️  Proceeding with insufficient space - HIGH RISK!"
+        fi
+        
+        echo "⚠️  WARNING: Root filesystem shrinking requires offline operation!"
+        echo "   ext4 filesystem cannot be shrunk while mounted"
+        echo ""
+        echo "🔧 Alternative approaches:"
+        echo "   1. Boot from Proxmox rescue/installation media"
+        echo "   2. Use a live Linux USB/CD"
+        echo "   3. Choose a larger root size to avoid shrinking"
+        echo ""
+        echo "� Recommendped: Choose option 2 (Root focused: 30GB) or 4 (Custom) with larger size"
+        echo ""
+        
+        read -p "Do you want to continue with offline shrinking? (y/N): " offline_continue
+        if [[ "$offline_continue" != "y" && "$offline_continue" != "Y" ]]; then
+            echo "❌ Operation cancelled. Please restart and choose a larger root size."
             exit 1
         fi
         
-        # First shrink filesystem
-        echo "🔄 Checking filesystem..."
-        e2fsck -f /dev/pve/root
-        echo "🔄 Shrinking filesystem to $ROOT_SIZE_CALC..."
-        resize2fs /dev/pve/root $ROOT_SIZE_CALC
-        
-        # Then shrink logical volume
-        echo "🔄 Shrinking logical volume..."
-        lvresize -L $ROOT_SIZE_CALC /dev/pve/root
+        echo ""
+        echo "🚨 CRITICAL: This operation requires system reboot into rescue mode!"
+        echo "📋 Manual steps required:"
+        echo "   1. Boot from Proxmox installation media or live Linux"
+        echo "   2. Activate LVM: vgchange -ay pve"
+        echo "   3. Check filesystem: e2fsck -f /dev/pve/root"
+        echo "   4. Shrink filesystem: resize2fs /dev/pve/root $ROOT_SIZE_CALC"
+        echo "   5. Shrink LV: lvresize -L $ROOT_SIZE_CALC /dev/pve/root"
+        echo "   6. Reboot back to normal system"
+        echo "   7. Re-run this script to create LVM-thin data volume"
+        echo ""
+        echo "❌ Cannot proceed with online root filesystem shrinking."
+        echo "   Please follow the manual steps above or choose a larger root size."
+        exit 1
         
     elif (( $(echo "$current_root_size < $target_root_size" | bc -l) )); then
         echo "🔄 Expanding root volume from ${current_root_size}G to ${target_root_size}G..."
