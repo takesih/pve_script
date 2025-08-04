@@ -11,6 +11,95 @@ echo "=============================="
 echo "Proxmox LVM-Thin Size Configuration Tool"
 echo "Resize LVM directories and LVM-thin after Proxmox installation"
 echo "=============================="
+echo ""
+echo "Available options:"
+echo "1. Resize existing LVM and create LVM-thin (current script)"
+echo "2. Add new disk and create LVM-thin storage"
+echo ""
+read -p "Select option (1-2): " setup_option
+
+if [[ "$setup_option" == "2" ]]; then
+    echo ""
+    echo "=== New Disk LVM-Thin Setup ==="
+    echo "This will help you add a new disk and create LVM-thin storage."
+    echo ""
+    
+    # Function to setup new disk LVM-thin
+    setup_new_disk_lvm_thin() {
+        echo "🔍 Available disks:"
+        lsblk -d -o NAME,SIZE,MODEL,TYPE | grep -E "^(NAME|sd|hd|nvme)"
+        echo ""
+        
+        read -p "Enter disk device (e.g., /dev/sdb, /dev/nvme0n1): " disk_device
+        
+        if [[ ! -b "$disk_device" ]]; then
+            echo "❌ Error: $disk_device is not a valid block device"
+            exit 1
+        fi
+        
+        echo ""
+        echo "⚠️  WARNING: This will completely erase $disk_device"
+        echo "All data on this disk will be lost!"
+        echo ""
+        read -p "Continue with disk setup? (y/N): " confirm_disk
+        if [[ "$confirm_disk" != "y" && "$confirm_disk" != "Y" ]]; then
+            echo "Operation cancelled."
+            exit 1
+        fi
+        
+        echo ""
+        echo "🔄 Setting up new disk for LVM-thin..."
+        
+        # Create new partition table and partition
+        echo "Creating new partition table..."
+        parted "$disk_device" mklabel gpt
+        parted "$disk_device" mkpart primary 0% 100%
+        
+        # Get partition name
+        if [[ "$disk_device" == *"nvme"* ]]; then
+            partition="${disk_device}p1"
+        else
+            partition="${disk_device}1"
+        fi
+        
+        echo "Created partition: $partition"
+        
+        # Create PV and VG
+        echo "Creating Physical Volume..."
+        pvcreate "$partition"
+        
+        echo "Creating Volume Group 'data'..."
+        vgcreate data "$partition"
+        
+        # Create LV and convert to thin pool
+        echo "Creating Logical Volume and converting to thin pool..."
+        lvcreate -l 99%FREE -n data data
+        lvconvert --type thin-pool data/data
+        
+        # Add LVM-thin storage to Proxmox
+        echo "Adding LVM-thin storage to Proxmox..."
+        pvesm add lvmthin local-lvm --content rootdir,images --thinpool data --vgname data
+        
+        echo ""
+        echo "✅ LVM-thin setup completed successfully!"
+        echo ""
+        echo "📊 Current LVM status:"
+        lvs --units g
+        echo ""
+        echo "🔧 Next steps:"
+        echo "1. Go to Proxmox web interface → Datacenter → Storage"
+        echo "2. Verify 'local-lvm' storage is available"
+        echo "3. You can now create VMs and containers using LVM-thin storage"
+        echo ""
+        echo "🎉 Setup completed!"
+        exit 0
+    }
+    
+    setup_new_disk_lvm_thin
+fi
+
+echo ""
+echo "=== Existing LVM Resize and LVM-Thin Setup ==="
 
 # Check root privileges
 if [[ $EUID -ne 0 ]]; then
@@ -43,6 +132,11 @@ check_required_packages() {
     # Check for LVM tools
     if ! command -v lvs &> /dev/null; then
         missing_packages+=("lvm2")
+    fi
+    
+    # Check for parted (for new disk setup)
+    if ! command -v parted &> /dev/null; then
+        missing_packages+=("parted")
     fi
     
     if [ ${#missing_packages[@]} -gt 0 ]; then
