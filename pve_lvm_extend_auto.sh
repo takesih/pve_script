@@ -432,17 +432,69 @@ EOF
     echo "✅ Automatic PE boot script created successfully!"
 }
 
-# Function to configure GRUB for automatic PE boot
-configure_grub_pe_boot() {
-    echo "🔄 Configuring GRUB for automatic PE boot..."
+# Function to detect system configuration
+detect_system_config() {
+    echo "🔍 Detecting system configuration..."
+    
+    # Detect disk and partition information
+    local boot_disk=$(df /boot | awk 'NR==2 {print $1}' | sed 's/[0-9]*$//')
+    local boot_partition=$(df /boot | awk 'NR==2 {print $1}' | sed 's/.*\([0-9]*\)$/\1/')
+    
+    echo "Boot disk: $boot_disk"
+    echo "Boot partition: $boot_partition"
+    
+    # Detect partition table type
+    local partition_table=$(fdisk -l "$boot_disk" 2>/dev/null | grep "Disklabel type" | awk '{print $3}')
+    echo "Partition table: $partition_table"
+    
+    # Detect filesystem type
+    local filesystem_type=$(df -T /boot | awk 'NR==2 {print $2}')
+    echo "Filesystem type: $filesystem_type"
+    
+    # Store configuration
+    BOOT_DISK="$boot_disk"
+    BOOT_PARTITION="$boot_partition"
+    PARTITION_TABLE="$partition_table"
+    FILESYSTEM_TYPE="$filesystem_type"
+    
+    echo "✅ System configuration detected"
+}
+
+# Function to generate appropriate GRUB configuration
+generate_grub_config() {
+    echo "🔄 Generating GRUB configuration..."
+    
+    # Determine GRUB root specification based on system configuration
+    local grub_root=""
+    
+    if [[ "$PARTITION_TABLE" == "gpt" ]]; then
+        if [[ "$FILESYSTEM_TYPE" == "ext4" ]]; then
+            grub_root="(hd0,gpt1)"
+        elif [[ "$FILESYSTEM_TYPE" == "xfs" ]]; then
+            grub_root="(hd0,gpt1)"
+        else
+            grub_root="(hd0,gpt1)"
+        fi
+    else
+        # MBR partition table
+        if [[ "$FILESYSTEM_TYPE" == "ext4" ]]; then
+            grub_root="(hd0,1)"
+        elif [[ "$FILESYSTEM_TYPE" == "xfs" ]]; then
+            grub_root="(hd0,1)"
+        else
+            grub_root="(hd0,1)"
+        fi
+    fi
+    
+    echo "Using GRUB root: $grub_root"
     
     # Create GRUB entry for PE boot
-    cat > /etc/grub.d/40_pe_lvm_extend << 'EOF'
+    cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
-exec tail -n +3 $0
+exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
-    set root=(hd0,gpt1)
+    set root=$grub_root
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
 }
@@ -457,6 +509,9 @@ EOF
     grub-reboot "PE Boot - LVM Extension"
     
     echo "✅ GRUB configured for automatic PE boot"
+    echo "  Root specification: $grub_root"
+    echo "  Partition table: $PARTITION_TABLE"
+    echo "  Filesystem: $FILESYSTEM_TYPE"
 }
 
 # Function to provide automatic boot instructions
@@ -545,8 +600,11 @@ prepare_linux_pe
 # Create automatic PE boot script
 create_pe_boot_script
 
+# Detect system configuration
+detect_system_config
+
 # Configure GRUB for automatic PE boot
-configure_grub_pe_boot
+generate_grub_config
 
 # Provide automatic boot information
 provide_automatic_boot_info
