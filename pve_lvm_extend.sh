@@ -270,6 +270,92 @@ create_data_volume() {
         exit 1
     fi
     
+    echo ""
+    echo "Data volume type options:"
+    echo "1. LVM-thin pool (Recommended for Proxmox)"
+    echo "2. Regular LVM volume with filesystem"
+    echo ""
+    
+    read -p "Select data volume type (1-2): " volume_type
+    
+    case $volume_type in
+        1)
+            create_thin_pool_data_volume "$free_space"
+            ;;
+        2)
+            create_regular_data_volume "$free_space"
+            ;;
+        *)
+            echo "Invalid option. Creating LVM-thin pool..."
+            create_thin_pool_data_volume "$free_space"
+            ;;
+    esac
+}
+
+# Function to create LVM-thin pool data volume
+create_thin_pool_data_volume() {
+    local free_space="$1"
+    
+    echo "🔄 Creating LVM-thin pool..."
+    
+    # Create thin pool using 95% of free space
+    local pool_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
+    echo "Creating thin pool with ${pool_size}G..."
+    
+    # Create thin pool
+    lvcreate -L "${pool_size}G" -T pve/data
+    
+    # Get thin pool size for thin volume creation
+    local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+    
+    # Create thin volume (use 95% of pool size for over-provisioning)
+    local thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
+    echo "Creating thin volume with ${thin_volume_size}G..."
+    lvcreate -V "${thin_volume_size}G" -T pve/data -n data
+    
+    # Create filesystem (ext4)
+    echo "Creating filesystem..."
+    mkfs.ext4 /dev/pve/data
+    
+    # Create mount point
+    mkdir -p /mnt/pve/data
+    
+    # Add to fstab for persistence
+    echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+    
+    # Mount the volume
+    mount /dev/pve/data /mnt/pve/data
+    
+    echo "✅ LVM-thin data volume created and mounted successfully"
+    echo "  Thin pool size: ${thin_pool_size}G"
+    echo "  Thin volume size: ${thin_volume_size}G"
+    echo "  Mount point: /mnt/pve/data"
+    echo ""
+    
+    # Add Proxmox storage configuration
+    echo "🔄 Adding LVM-thin storage to Proxmox..."
+    if ! grep -q "lvmthin: local-lvm" /etc/pve/storage.cfg 2>/dev/null; then
+        cat >> /etc/pve/storage.cfg << 'STORAGE_EOF'
+
+lvmthin: local-lvm
+	thinpool data
+	vgname pve
+	content vztmpl,backup,iso,rootdir,images
+STORAGE_EOF
+        echo "✅ LVM-thin storage configuration added to Proxmox"
+    else
+        echo "ℹ️  LVM-thin storage configuration already exists"
+    fi
+    
+    SKIP_DATA_VOLUME=false
+}
+
+# Function to create regular LVM data volume
+create_regular_data_volume() {
+    local free_space="$1"
+    
+    echo "🔄 Creating regular LVM data volume..."
+    
     # Create data volume using 95% of free space (leave some buffer)
     local data_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
     echo "Creating data volume with ${data_size}G..."
@@ -290,7 +376,7 @@ create_data_volume() {
     # Mount the volume
     mount /dev/pve/data /mnt/pve/data
     
-    echo "✅ Data volume created and mounted successfully"
+    echo "✅ Regular LVM data volume created and mounted successfully"
     echo "  Size: ${data_size}G"
     echo "  Mount point: /mnt/pve/data"
     echo ""
