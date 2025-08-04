@@ -505,18 +505,18 @@ check_pve_lvm_resize_system() {
 
 # Function to check if boot resize was completed
 check_boot_resize_status() {
-    if [[ -f "/var/log/pve-boot-resize.log"]]; then
+    if [[ -f "/var/log/pve-boot-resize.log" ]]; then
         echo "🔍 Checking boot-time resize status..."
         echo ""
         echo "📋 Boot resize log:"
         tail -10 /var/log/pve-boot-resize.log
         echo ""
         
-        if grep -q "Boot-time resize completed successfully"/var/log/pve-boot-resize.log; then
+        if grep -q "Boot-time resize completed successfully" /var/log/pve-boot-resize.log; then
             echo "✅ Boot-time resize was completed successfully!"
             
             # Check if LVM-thin was also created during boot
-            if grep -q "LVM-thin setup completed during boot"/var/log/pve-boot-resize.log; then
+            if grep -q "LVM-thin setup completed during boot" /var/log/pve-boot-resize.log; then
                 echo "✅ LVM-thin data volume was also created during boot!"
                 echo "  Your system is now fully configured with LVM-thin storage."
                 echo ""
@@ -540,8 +540,8 @@ check_boot_resize_status() {
             echo "⚠️  Boot-time resize may have failed or is incomplete."
             echo "  Check the full log: /var/log/pve-boot-resize.log"
             echo ""
-            read -p "Continue anyway (y/N): "continue_anyway
-            if [[ "$continue_anyway"!= "y"&& "$continue_anyway"!= "Y"]]; then
+            read -p "Continue anyway (y/N): " continue_anyway
+            if [[ "$continue_anyway" != "y" && "$continue_anyway" != "Y" ]]; then
                 echo "❌ Operation cancelled."
                 exit 1
             fi
@@ -549,7 +549,7 @@ check_boot_resize_status() {
     fi
     
     # Check if resize service is still pending
-    if [[ -f "/etc/pve-boot-resize.conf"]]; then
+    if [[ -f "/etc/pve-boot-resize.conf" ]]; then
         echo "⚠️  Boot-time resize is still scheduled but not completed."
         echo "  Configuration file still exists: /etc/pve-boot-resize.conf"
         echo ""
@@ -568,8 +568,8 @@ check_boot_resize_status() {
         fi
         
         echo ""
-        read -p "Do you want to remove the pending resize and continue (y/N): "remove_pending
-        if [[ "$remove_pending"== "y"|| "$remove_pending"== "Y"]]; then
+        read -p "Do you want to remove the pending resize and continue (y/N): " remove_pending
+        if [[ "$remove_pending" == "y" || "$remove_pending" == "Y" ]]; then
             rm -f /etc/pve-boot-resize.conf
             systemctl disable pve-boot-resize.service 2>/dev/null || true
             echo "✅ Pending resize configuration removed."
@@ -681,7 +681,7 @@ get_size_configuration() {
         echo "5. Skip shrinking (keep current root size, create thin data volume)"
         echo ""
         
-        read -p "Select option (1-5): "size_option
+        read -p "Select option (1-5): " size_option
         
         case $size_option in
             1)
@@ -701,8 +701,8 @@ get_size_configuration() {
                 ;;
             4)
                 echo "Minimum recommended size: ${current_usage_gb}GB"
-                read -p "Enter root volume size (e.g., 25G): "ROOT_SIZE
-                read -p "Enter data volume size (e.g., 100G or 'remaining'): "DATA_SIZE
+                read -p "Enter root volume size (e.g., 25G): " ROOT_SIZE
+                read -p "Enter data volume size (e.g., 100G or 'remaining'): " DATA_SIZE
                 echo "Selected: Root ${ROOT_SIZE}, Data ${DATA_SIZE}"
                 ;;
             5)
@@ -723,7 +723,7 @@ get_size_configuration() {
         echo "3. Percentage based (Root: 30%, Data: 70%)"
         echo ""
         
-        read -p "Select option (1-3): "size_option
+        read -p "Select option (1-3): " size_option
         
         case $size_option in
             1)
@@ -732,8 +732,8 @@ get_size_configuration() {
                 echo "Selected: Root 20GB, Data remaining space"
                 ;;
             2)
-                read -p "Enter root volume size (e.g., 25G): "ROOT_SIZE
-                read -p "Enter data volume size (e.g., 100G or 'remaining'): "DATA_SIZE
+                read -p "Enter root volume size (e.g., 25G): " ROOT_SIZE
+                read -p "Enter data volume size (e.g., 100G or 'remaining'): " DATA_SIZE
                 echo "Selected: Root ${ROOT_SIZE}, Data ${DATA_SIZE}"
                 ;;
             3)
@@ -754,20 +754,20 @@ get_size_configuration() {
 calculate_sizes() {
     local total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
     
-    if [[ "$ROOT_SIZE"== *"%"]]; then
+    if [[ "$ROOT_SIZE" == *"%" ]]; then
         local root_percent=${ROOT_SIZE%\%}
         ROOT_SIZE_CALC=$(echo "scale=0; $total_vg_size * $root_percent / 100"| bc)G
-    elif [[ "$ROOT_SIZE"== "current"]]; then
+    elif [[ "$ROOT_SIZE" == "current" ]]; then
         local current_root_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
         ROOT_SIZE_CALC="${current_root_size}G"
     else
         ROOT_SIZE_CALC="$ROOT_SIZE"
     fi
     
-    if [[ "$DATA_SIZE"== *"%"]]; then
+    if [[ "$DATA_SIZE" == *"%" ]]; then
         local data_percent=${DATA_SIZE%\%}
         DATA_SIZE_CALC=$(echo "scale=0; $total_vg_size * $data_percent / 100"| bc)G
-    elif [[ "$DATA_SIZE"== "remaining"]]; then
+    elif [[ "$DATA_SIZE" == "remaining" ]]; then
         DATA_SIZE_CALC="100%FREE"
     else
         DATA_SIZE_CALC="$DATA_SIZE"
@@ -787,7 +787,7 @@ resize_root_volume() {
     target_root_size=$(echo "$ROOT_SIZE_CALC"| sed 's/G//')
     
     # Skip resizing if keeping current size
-    if [[ "$ROOT_SIZE"== "current"]]; then
+    if [[ "$ROOT_SIZE" == "current" ]]; then
         echo "Keeping current root volume size (${current_root_size}G)"
         return 0
     fi
@@ -813,8 +813,8 @@ resize_root_volume() {
             echo "  2. Choose a larger root size (recommended: $(echo "scale=0; $current_usage_gb + 5"| bc)GB or more)"
             echo "  3. Cancel and run cleanup first"
             echo ""
-            read -p "Do you want to continue anyway (NOT RECOMMENDED) (y/N): "force_continue
-            if [[ "$force_continue"!= "y"&& "$force_continue"!= "Y"]]; then
+            read -p "Do you want to continue anyway (NOT RECOMMENDED) (y/N): " force_continue
+            if [[ "$force_continue" != "y" && "$force_continue" != "Y" ]]; then
                 echo "Operation cancelled for safety."
                 exit 1
             fi
@@ -836,7 +836,7 @@ resize_root_volume() {
             echo "4. Cancel and choose larger root size"
             echo ""
             
-            read -p "Select option (1-4): "shrink_option
+            read -p "Select option (1-4): " shrink_option
             
             case $shrink_option in
                 1)
@@ -1004,7 +1004,7 @@ setup_lvm_thin_data() {
     
     # Create thin pool
     echo "Creating LVM-thin pool..."
-    if [[ "$DATA_SIZE_CALC"== "100%FREE"]]; then
+    if [[ "$DATA_SIZE_CALC" == "100%FREE" ]]; then
         lvcreate -l 100%FREE -T pve/data
     else
         lvcreate -L $DATA_SIZE_CALC -T pve/data
