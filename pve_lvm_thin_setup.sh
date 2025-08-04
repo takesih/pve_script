@@ -18,11 +18,48 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Function to check required packages
+check_required_packages() {
+    echo "� Checkning required packages..."
+    
+    local missing_packages=()
+    
+    # Check for bc (calculator)
+    if ! command -v bc &> /dev/null; then
+        missing_packages+=("bc")
+    fi
+    
+    # Check for e2fsck
+    if ! command -v e2fsck &> /dev/null; then
+        missing_packages+=("e2fsprogs")
+    fi
+    
+    # Check for resize2fs
+    if ! command -v resize2fs &> /dev/null; then
+        missing_packages+=("e2fsprogs")
+    fi
+    
+    # Check for LVM tools
+    if ! command -v lvs &> /dev/null; then
+        missing_packages+=("lvm2")
+    fi
+    
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+        echo "📦 Installing missing packages: ${missing_packages[*]}"
+        apt-get update
+        apt-get install -y "${missing_packages[@]}"
+        echo "✅ Required packages installed successfully"
+    else
+        echo "✅ All required packages are already installed"
+    fi
+    echo ""
+}
+
 # Function to schedule boot-time resize
 schedule_boot_resize() {
     echo "🔧 Setting up automatic boot-time resize..."
     
-    # Create the resize script
+    # Create the resize script with improved error handling
     cat > /usr/local/bin/pve-boot-resize.sh << 'EOF'
 #!/bin/bash
 # Proxmox Boot-time Root Filesystem Resize Script
@@ -30,67 +67,146 @@ schedule_boot_resize() {
 
 set -e
 
+# Logging function
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a /var/log/pve-boot-resize.log
+}
+
 # Configuration file
 CONFIG_FILE="/etc/pve-boot-resize.conf"
 
 # Check if resize is needed
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "No resize configuration found, exiting..."
+    log_message "No resize configuration found, exiting..."
     exit 0
 fi
 
 # Read configuration
 source "$CONFIG_FILE"
 
-echo "Starting boot-time root filesystem resize..."
-echo "Target size: $TARGET_ROOT_SIZE"
+log_message "Starting boot-time root filesystem resize..."
+log_message "Target size: $TARGET_ROOT_SIZE"
+log_message "Original size: $ORIGINAL_SIZE"
 
-# Remount root as read-only
-echo "Remounting root filesystem as read-only..."
-mount -o remount,ro /
+# Wait for LVM to be ready
+log_message "Waiting for LVM to be ready..."
+sleep 5
 
-# Check filesystem
-echo "Checking filesystem integrity..."
-e2fsck -f /dev/pve/root
+# Check if LVM volume exists
+if ! lvs /dev/pve/root >/dev/null 2>&1; then
+    log_message "ERROR: LVM volume /dev/pve/root not found"
+    exit 1
+fi
 
-# Resize filesystem
-echo "Resizing filesystem to $TARGET_ROOT_SIZE..."
-resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"
+# Get current size
+current_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+target_size_num=$(echo "$TARGET_ROOT_SIZE" | sed 's/G//')
+
+log_message "Current size: ${current_size}G"
+log_message "Target size: ${target_size_num}G"
+
+# Check if resize is actually needed
+if (( $(echo "$current_size <= $target_size_num" | bc -l) )); then
+    log_message "Root volume is already at target size or smaller, no resize needed"
+    rm -f "$CONFIG_FILE"
+    exit 0
+fi
+
+# Create a backup of fstab
+cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d_%H%M%S)
+
+# Try to stop services that might interfere
+log_message "Stopping services that might interfere..."
+systemctl stop pveproxy pvedaemon pve-cluster || true
+
+# Kill processes that might be using the filesystem
+log_message "Terminating processes that might interfere..."
+fuser -km / || true
+sleep 2
+
+# Sync and remount root as read-only
+log_message "Syncing filesystem..."
+sync
+sleep 2
+
+log_message "Attempting to remount root filesystem as read-only..."
+if ! mount -o remount,ro /; then
+    log_message "WARNING: Could not remount root as read-only, attempting force..."
+    mount -o remount,ro,force / || {
+        log_message "ERROR: Failed to remount root as read-only"
+        exit 1
+    }
+fi
+
+# Check filesystem integrity
+log_message "Checking filesystem integrity..."
+if ! e2fsck -f -y /dev/pve/root; then
+    log_message "ERROR: Filesystem check failed"
+    mount -o remount,rw /
+    exit 1
+fi
+
+# Resize filesystem first
+log_message "Resizing filesystem to $TARGET_ROOT_SIZE..."
+if ! resize2fs /dev/pve/root "$TARGET_ROOT_SIZE"; then
+    log_message "ERROR: Filesystem resize failed"
+    mount -o remount,rw /
+    exit 1
+fi
 
 # Resize logical volume
-echo "Resizing logical volume to $TARGET_ROOT_SIZE..."
-lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root
+log_message "Resizing logical volume to $TARGET_ROOT_SIZE..."
+if ! lvresize -L "$TARGET_ROOT_SIZE" /dev/pve/root; then
+    log_message "ERROR: Logical volume resize failed"
+    mount -o remount,rw /
+    exit 1
+fi
 
 # Remount root as read-write
-echo "Remounting root filesystem as read-write..."
-mount -o remount,rw /
+log_message "Remounting root filesystem as read-write..."
+if ! mount -o remount,rw /; then
+    log_message "ERROR: Failed to remount root as read-write"
+    exit 1
+fi
+
+# Verify the resize
+new_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+log_message "Resize completed. New size: ${new_size}G"
 
 # Remove configuration file to prevent re-running
 rm -f "$CONFIG_FILE"
 
-# Create completion marker
-echo "$(date): Root filesystem resized to $TARGET_ROOT_SIZE" > /var/log/pve-boot-resize.log
+# Restart services
+log_message "Restarting Proxmox services..."
+systemctl start pve-cluster pvedaemon pveproxy || true
 
-echo "Boot-time resize completed successfully!"
+log_message "Boot-time resize completed successfully!"
+log_message "System will continue normal boot process..."
+
+exit 0
 EOF
 
     chmod +x /usr/local/bin/pve-boot-resize.sh
     
-    # Create systemd service
+    # Create systemd service with improved timing
     cat > /etc/systemd/system/pve-boot-resize.service << 'EOF'
 [Unit]
 Description=Proxmox Boot-time Root Filesystem Resize
 DefaultDependencies=false
-After=local-fs-pre.target
-Before=local-fs.target
+After=systemd-remount-fs.service lvm2-activation.service
+Before=local-fs.target systemd-fsck-root.service
+Conflicts=shutdown.target
 RequiresMountsFor=/
+ConditionPathExists=/etc/pve-boot-resize.conf
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/pve-boot-resize.sh
-StandardOutput=journal
-StandardError=journal
+StandardOutput=journal+console
+StandardError=journal+console
 RemainAfterExit=yes
+TimeoutSec=300
+KillMode=none
 
 [Install]
 WantedBy=local-fs.target
@@ -131,9 +247,70 @@ EOF
     fi
 }
 
+# Function to check if boot resize was completed
+check_boot_resize_status() {
+    if [[ -f "/var/log/pve-boot-resize.log" ]]; then
+        echo "🔍 Checking boot-time resize status..."
+        echo ""
+        echo "📋 Boot resize log:"
+        tail -10 /var/log/pve-boot-resize.log
+        echo ""
+        
+        if grep -q "Boot-time resize completed successfully" /var/log/pve-boot-resize.log; then
+            echo "✅ Boot-time resize was completed successfully!"
+            echo "   You can now proceed with LVM-thin data volume creation."
+            echo ""
+            return 0
+        else
+            echo "⚠️  Boot-time resize may have failed or is incomplete."
+            echo "   Check the full log: /var/log/pve-boot-resize.log"
+            echo ""
+            read -p "Continue anyway? (y/N): " continue_anyway
+            if [[ "$continue_anyway" != "y" && "$continue_anyway" != "Y" ]]; then
+                echo "❌ Operation cancelled."
+                exit 1
+            fi
+        fi
+    fi
+    
+    # Check if resize service is still pending
+    if [[ -f "/etc/pve-boot-resize.conf" ]]; then
+        echo "⚠️  Boot-time resize is still scheduled but not completed."
+        echo "   Configuration file still exists: /etc/pve-boot-resize.conf"
+        echo ""
+        echo "💡 Possible reasons:"
+        echo "   1. System hasn't been rebooted yet"
+        echo "   2. Resize service failed during boot"
+        echo "   3. Service was disabled"
+        echo ""
+        
+        # Check service status
+        if systemctl is-enabled pve-boot-resize.service >/dev/null 2>&1; then
+            echo "🔍 Service status: $(systemctl is-active pve-boot-resize.service 2>/dev/null || echo 'inactive')"
+            echo "   Service is enabled but may have failed"
+        else
+            echo "🔍 Service is not enabled"
+        fi
+        
+        echo ""
+        read -p "Do you want to remove the pending resize and continue? (y/N): " remove_pending
+        if [[ "$remove_pending" == "y" || "$remove_pending" == "Y" ]]; then
+            rm -f /etc/pve-boot-resize.conf
+            systemctl disable pve-boot-resize.service 2>/dev/null || true
+            echo "✅ Pending resize configuration removed."
+        else
+            echo "❌ Please reboot to complete the resize or fix the issue first."
+            exit 1
+        fi
+    fi
+}
+
 # Function to check system compatibility
 check_system_compatibility() {
     echo "🔍 Checking system compatibility..."
+    
+    # Check boot resize status first
+    check_boot_resize_status
     
     # Check if VG has free space
     free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
@@ -457,11 +634,8 @@ if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     exit 1
 fi
 
-# Install bc for calculations if not present
-if ! command -v bc &> /dev/null; then
-    echo "🔧 Installing bc for calculations..."
-    apt-get update && apt-get install -y bc
-fi
+# Check and install required packages
+check_required_packages
 
 # Check system compatibility
 check_system_compatibility
