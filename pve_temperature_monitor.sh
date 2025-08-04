@@ -446,16 +446,10 @@ modify_web_interface() {
             printBar: false,
             title: gettext('CPU Temperature'),
             textField: 'thermal',
-            renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-                if (record.data) {
-                    if (record.data['thermal-state']) {
-                        if (record.data['thermal-state']['cpu-thermal']) {
-                            return record.data['thermal-state']['cpu-thermal'] + '°C';
-                        }
-                    }
-                }
-                return 'N/A';
-            }
+                renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+        // Simple temperature display - will be updated by background task
+        return 'Loading...';
+    }
         },
         {
             itemId: 'thermal-disk',
@@ -463,16 +457,10 @@ modify_web_interface() {
             printBar: false,
             title: gettext('Disk Temperature'),
             textField: 'thermal-disk',
-            renderer: function(value, metaData, record, rowIndex, colIndex, store) {
-                if (record.data) {
-                    if (record.data['thermal-state']) {
-                        if (record.data['thermal-state']['disk-thermal']) {
-                            return record.data['thermal-state']['disk-thermal'] + '°C';
-                        }
-                    }
-                }
-                return 'N/A';
-            }
+                renderer: function(value, metaData, record, rowIndex, colIndex, store) {
+        // Simple temperature display - will be updated by background task
+        return 'Loading...';
+    }
         },
 EOF
     
