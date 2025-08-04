@@ -3,7 +3,7 @@
 # Proxmox LVM-Thin Size Configuration Script
 # Proxmox 설치 완료 후 LVM 디렉토리와 LVM-thin 사이즈를 변경하는 스크립트
 
-# 2025-08-04 12:19:40
+# 2025-08-04 22:45:15
 set -e
 
 echo "=============================="
@@ -98,18 +98,37 @@ if ! lvs /dev/pve/root >/dev/null 2>&1; then
     exit 1
 fi
 
-# Get current size
+# Get current size and check VG space
 current_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
 target_size_num=$(echo "$TARGET_ROOT_SIZE" | sed 's/G//')
+vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
+free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
 
 log_message "Current size: ${current_size}G"
 log_message "Target size: ${target_size_num}G"
+log_message "VG size: ${vg_size}G"
+log_message "Free space: ${free_space}G"
 
 # Check if resize is actually needed
 if (( $(echo "$current_size <= $target_size_num" | bc -l) )); then
     log_message "Root volume is already at target size or smaller, no resize needed"
     rm -f "$CONFIG_FILE"
     exit 0
+fi
+
+# Special handling for pve_lvm_resize.sh systems (very little free space)
+if (( $(echo "$free_space < 1" | bc -l) )); then
+    log_message "Detected pve_lvm_resize.sh system with minimal free space"
+    log_message "Will need to shrink root volume significantly"
+    
+    # Calculate how much space we need to free up
+    space_to_free=$(echo "scale=2; $current_size - $target_size_num" | bc)
+    log_message "Space to free up: ${space_to_free}G"
+    
+    if (( $(echo "$space_to_free < 10" | bc -l) )); then
+        log_message "ERROR: Insufficient space reduction (${space_to_free}G). Need at least 10GB reduction."
+        exit 1
+    fi
 fi
 
 # Create a backup of fstab
@@ -176,6 +195,48 @@ log_message "Resize completed. New size: ${new_size}G"
 # Remove configuration file to prevent re-running
 rm -f "$CONFIG_FILE"
 
+# Create LVM-thin data volume if this was a pve_lvm_resize.sh system
+if [[ -n "$CREATE_DATA_VOLUME" && "$CREATE_DATA_VOLUME" == "true" ]]; then
+    log_message "Creating LVM-thin data volume for pve_lvm_resize.sh system..."
+    
+    # Wait a bit for LVM to settle after resize
+    sleep 3
+    
+    # Check available space
+    free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+    log_message "Available free space: ${free_space}G"
+    
+    if (( $(echo "$free_space < 5" | bc -l) )); then
+        log_message "ERROR: Insufficient free space (${free_space}G) for data volume"
+        log_message "Root resize may not have freed enough space"
+    else
+        # Create thin pool with remaining space
+        if lvcreate -l 100%FREE -T pve/data; then
+            log_message "LVM-thin pool created successfully"
+            
+            # Wait for thin pool to be ready
+            sleep 2
+            
+            # Get thin pool size for thin volume creation
+            thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
+            log_message "Thin pool size: ${thin_pool_size}G"
+            
+            # Create thin volume (use 95% of pool size for over-provisioning)
+            thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
+            
+            if lvcreate -V ${thin_volume_size}G -T pve/data -n data; then
+                log_message "LVM-thin data volume created successfully (${thin_volume_size}G)"
+                log_message "LVM-thin setup completed during boot!"
+                log_message "pve_lvm_resize.sh system recovery completed successfully!"
+            else
+                log_message "ERROR: Failed to create thin volume"
+            fi
+        else
+            log_message "ERROR: Failed to create thin pool"
+        fi
+    fi
+fi
+
 # Restart services
 log_message "Restarting Proxmox services..."
 systemctl start pve-cluster pvedaemon pveproxy || true
@@ -216,6 +277,7 @@ EOF
     cat > /etc/pve-boot-resize.conf << EOF
 TARGET_ROOT_SIZE="$ROOT_SIZE_CALC"
 ORIGINAL_SIZE="$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')G"
+CREATE_DATA_VOLUME="$PVE_LVM_RESIZE_DETECTED"
 CREATED_DATE="$(date)"
 EOF
 
@@ -235,16 +297,62 @@ EOF
     echo "   - Resize log: /var/log/pve-boot-resize.log"
     echo ""
     
-    read -p "Reboot now to apply resize? (y/N): " reboot_now
-    if [[ "$reboot_now" == "y" || "$reboot_now" == "Y" ]]; then
-        echo "🔄 Rebooting system..."
-        sleep 3
+    # For pve_lvm_resize.sh systems, automatically reboot
+    if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
+        echo "🔄 Automatically rebooting system for pve_lvm_resize.sh recovery..."
+        echo "   System will reboot in 10 seconds..."
+        echo "   After reboot, the system will be fully configured with LVM-thin."
+        sleep 10
         reboot
     else
-        echo "⚠️  Please reboot manually to apply the resize."
-        echo "   After reboot, re-run this script to create LVM-thin data volume."
-        exit 0
+        # For other systems, ask for confirmation
+        read -p "Reboot now to apply resize? (y/N): " reboot_now
+        if [[ "$reboot_now" == "y" || "$reboot_now" == "Y" ]]; then
+            echo "🔄 Rebooting system..."
+            sleep 3
+            reboot
+        else
+            echo "⚠️  Please reboot manually to apply the resize."
+            echo "   After reboot, re-run this script to create LVM-thin data volume."
+            exit 0
+        fi
     fi
+}
+
+# Function to check if system was processed by pve_lvm_resize.sh
+check_pve_lvm_resize_system() {
+    echo "🔍 Checking if system was processed by pve_lvm_resize.sh..."
+    
+    # Check if data volume is missing (key indicator of pve_lvm_resize.sh usage)
+    if ! lvs /dev/pve/data >/dev/null 2>&1; then
+        # Get current root size and VG size
+        current_root_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')
+        total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
+        free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+        
+        # Calculate usage percentage
+        root_usage_percent=$(echo "scale=2; $current_root_size * 100 / $total_vg_size" | bc)
+        
+        # If root uses >95% and no data volume exists, likely pve_lvm_resize.sh was used
+        if (( $(echo "$root_usage_percent > 95" | bc -l) )) && (( $(echo "$free_space < 2" | bc -l) )); then
+            echo "🔍 DETECTED: System appears to have been processed by pve_lvm_resize.sh"
+            echo "   - No data volume exists"
+            echo "   - Root volume uses ${root_usage_percent}% of total space"
+            echo "   - Free space: ${free_space}GB"
+            echo ""
+            echo "🔧 This system needs special handling for LVM-thin setup."
+            echo "   Root volume must be shrunk first to create space for data volume."
+            echo ""
+            
+            echo "✅ Automatic recovery will be configured for pve_lvm_resize.sh system."
+            echo "   This system will be processed with safe default settings."
+            PVE_LVM_RESIZE_DETECTED=true
+            return 0
+        fi
+    fi
+    
+    echo "✅ System appears to be in standard configuration."
+    PVE_LVM_RESIZE_DETECTED=false
 }
 
 # Function to check if boot resize was completed
@@ -258,7 +366,26 @@ check_boot_resize_status() {
         
         if grep -q "Boot-time resize completed successfully" /var/log/pve-boot-resize.log; then
             echo "✅ Boot-time resize was completed successfully!"
-            echo "   You can now proceed with LVM-thin data volume creation."
+            
+            # Check if LVM-thin was also created during boot
+            if grep -q "LVM-thin setup completed during boot" /var/log/pve-boot-resize.log; then
+                echo "✅ LVM-thin data volume was also created during boot!"
+                echo "   Your system is now fully configured with LVM-thin storage."
+                echo ""
+                echo "📊 Current LVM status:"
+                lvs --units g
+                echo ""
+                echo "💡 Next steps:"
+                echo "1. Go to Proxmox web interface → Datacenter → Storage"
+                echo "2. Edit 'local' storage and add content types (Disk image, Container)"
+                echo "3. Your LVM-thin storage is ready for VMs and containers!"
+                echo ""
+                echo "🎉 Setup completed! No further action needed."
+                exit 0
+            else
+                echo "   Root resize completed, but data volume creation is still needed."
+                echo "   Continuing with LVM-thin data volume setup..."
+            fi
             echo ""
             return 0
         else
@@ -308,6 +435,9 @@ check_boot_resize_status() {
 # Function to check system compatibility
 check_system_compatibility() {
     echo "🔍 Checking system compatibility..."
+    
+# Check if this system was processed by pve_lvm_resize.sh
+    check_pve_lvm_resize_system
     
     # Check boot resize status first
     check_boot_resize_status
@@ -365,7 +495,29 @@ get_size_configuration() {
     echo ""
     
     # Provide different options based on system type
-    if [[ "$SYSTEM_TYPE" == "post_resize" || "$SYSTEM_TYPE" == "limited_space" ]]; then
+    if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
+        # Special handling for pve_lvm_resize.sh systems - use safe automatic defaults
+        current_usage=$(df / | awk 'NR==2 {print $3}')
+        current_usage_gb=$(echo "scale=0; $current_usage / 1024 / 1024 + 8" | bc)  # Add 8GB buffer for safety
+        
+        # Ensure minimum 20GB for root
+        if (( $(echo "$current_usage_gb < 20" | bc -l) )); then
+            current_usage_gb=20
+        fi
+        
+        echo "🔧 Automatic Size Configuration for pve_lvm_resize.sh System:"
+        echo "   Current root usage: $(echo "scale=1; $current_usage / 1024 / 1024" | bc)GB"
+        echo "   Current root size: $(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/root | tr -d ' ')GB"
+        echo "   Selected root size: ${current_usage_gb}GB (safe automatic)"
+        echo ""
+        echo "⚠️  Root volume will be shrunk and LVM-thin data volume will be created."
+        echo "   This will happen automatically during next boot."
+        echo ""
+        
+        ROOT_SIZE="${current_usage_gb}G"
+        DATA_SIZE="remaining"
+        echo "✅ Auto-selected: Root ${current_usage_gb}GB, Data remaining space (LVM-thin)"
+    elif [[ "$SYSTEM_TYPE" == "post_resize" || "$SYSTEM_TYPE" == "limited_space" ]]; then
         # Calculate safe minimum size based on current usage
         current_usage=$(df / | awk 'NR==2 {print $3}')
         current_usage_gb=$(echo "scale=0; $current_usage / 1024 / 1024 + 5" | bc)  # Add 5GB buffer
@@ -521,45 +673,54 @@ resize_root_volume() {
             echo "⚠️  Proceeding with insufficient space - HIGH RISK!"
         fi
         
-        echo "🔧 Root filesystem shrinking options:"
-        echo "1. Schedule automatic resize on next boot (Recommended)"
-        echo "2. Manual offline operation (Advanced users)"
-        echo "3. Cancel and choose larger root size"
-        echo ""
-        
-        read -p "Select option (1-3): " shrink_option
-        
-        case $shrink_option in
-            1)
-                echo "✅ Scheduling automatic resize on next boot..."
-                schedule_boot_resize
-                return 0
-                ;;
-            2)
-                echo ""
-                echo "🚨 CRITICAL: Manual offline operation required!"
-                echo "📋 Manual steps:"
-                echo "   1. Boot from Proxmox installation media or live Linux"
-                echo "   2. Activate LVM: vgchange -ay pve"
-                echo "   3. Check filesystem: e2fsck -f /dev/pve/root"
-                echo "   4. Shrink filesystem: resize2fs /dev/pve/root $ROOT_SIZE_CALC"
-                echo "   5. Shrink LV: lvresize -L $ROOT_SIZE_CALC /dev/pve/root"
-                echo "   6. Reboot back to normal system"
-                echo "   7. Re-run this script to create LVM-thin data volume"
-                echo ""
-                echo "❌ Cannot proceed with online root filesystem shrinking."
-                exit 1
-                ;;
-            3)
-                echo "❌ Operation cancelled. Please restart and choose a larger root size."
-                exit 1
-                ;;
-            *)
-                echo "❌ Invalid option. Scheduling automatic resize..."
-                schedule_boot_resize
-                return 0
-                ;;
-        esac
+        # For pve_lvm_resize.sh systems, automatically schedule boot resize
+        if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
+            echo "🔧 Automatically scheduling boot-time resize for pve_lvm_resize.sh system..."
+            echo "   This is required for remote systems without console access."
+            schedule_boot_resize
+            return 0
+        else
+            # For other systems, provide options
+            echo "🔧 Root filesystem shrinking options:"
+            echo "1. Schedule automatic resize on next boot (Recommended)"
+            echo "2. Manual offline operation (Advanced users)"
+            echo "3. Cancel and choose larger root size"
+            echo ""
+            
+            read -p "Select option (1-3): " shrink_option
+            
+            case $shrink_option in
+                1)
+                    echo "✅ Scheduling automatic resize on next boot..."
+                    schedule_boot_resize
+                    return 0
+                    ;;
+                2)
+                    echo ""
+                    echo "🚨 CRITICAL: Manual offline operation required!"
+                    echo "📋 Manual steps:"
+                    echo "   1. Boot from Proxmox installation media or live Linux"
+                    echo "   2. Activate LVM: vgchange -ay pve"
+                    echo "   3. Check filesystem: e2fsck -f /dev/pve/root"
+                    echo "   4. Shrink filesystem: resize2fs /dev/pve/root $ROOT_SIZE_CALC"
+                    echo "   5. Shrink LV: lvresize -L $ROOT_SIZE_CALC /dev/pve/root"
+                    echo "   6. Reboot back to normal system"
+                    echo "   7. Re-run this script to create LVM-thin data volume"
+                    echo ""
+                    echo "❌ Cannot proceed with online root filesystem shrinking."
+                    exit 1
+                    ;;
+                3)
+                    echo "❌ Operation cancelled. Please restart and choose a larger root size."
+                    exit 1
+                    ;;
+                *)
+                    echo "❌ Invalid option. Scheduling automatic resize..."
+                    schedule_boot_resize
+                    return 0
+                    ;;
+            esac
+        fi
         
     elif (( $(echo "$current_root_size < $target_root_size" | bc -l) )); then
         echo "🔄 Expanding root volume from ${current_root_size}G to ${target_root_size}G..."
@@ -626,6 +787,24 @@ echo "4. This will resize root volume and recreate data volume as LVM-thin."
 echo "5. Make sure you have backups of important data."
 echo "6. This script works with systems that used pve_lvm_resize.sh."
 echo "7. Root volume will be safely shrunk if needed to create data volume."
+
+# Special handling for pve_lvm_resize.sh systems
+if [[ "$PVE_LVM_RESIZE_DETECTED" == "true" ]]; then
+    echo ""
+    echo "🔍 DETECTED: pve_lvm_resize.sh system"
+    echo "   This system will be automatically configured for remote operation."
+    echo "   No user input will be required during boot-time resize."
+    echo "   System will automatically reboot and complete the setup."
+    echo ""
+    echo "📋 What will happen:"
+    echo "   1. Boot-time resize service will be configured"
+    echo "   2. System will reboot automatically"
+    echo "   3. During boot: Root volume will be shrunk"
+    echo "   4. During boot: LVM-thin data volume will be created"
+    echo "   5. System will boot normally with LVM-thin configured"
+    echo ""
+fi
+
 echo ""
 
 read -p "Continue with LVM resize operation? (y/N): " confirm
