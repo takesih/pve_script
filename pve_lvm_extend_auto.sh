@@ -4,7 +4,7 @@
 # Script to extend LVM volumes after disk expansion with automatic PE boot
 # Designed for remote systems without user intervention
 # Based on Proxmox forum: https://forum.proxmox.com/threads/extend-local-lvm-proxmox.133478/#post-589215
-# Version: 2025-01-08 055000
+# Version: 2025-08-05 234855
 # Author: Proxmox LVM Management Tool
 
 set -e
@@ -121,7 +121,7 @@ collect_configuration() {
     
     # Get current usage
     local current_usage=$(df / | awk 'NR==2 {print $3}')
-    local current_usage_gb=$(echo "scale=1; $current_usage / 1024 / 1024" | bc)
+    local current_usage_gb=$((current_usage / 1024 / 1024))
     echo "Current root usage: ${current_usage_gb}GB"
     echo ""
     
@@ -231,7 +231,7 @@ calculate_sizes() {
     
     if [[ "$ROOT_SIZE" == *"%" ]]; then
         local root_percent=${ROOT_SIZE%\%}
-        ROOT_SIZE_CALC=$(echo "scale=0; $total_vg_size * $root_percent / 100" | bc)G
+        ROOT_SIZE_CALC=$((total_vg_size * root_percent / 100))G
     else
         ROOT_SIZE_CALC="$ROOT_SIZE"
     fi
@@ -456,7 +456,18 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
     if ! lvs /dev/pve/data &>/dev/null; then
         echo "📏 Creating thin pool..."
         local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-        local pool_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
+        
+        # Ensure free_space is a valid number
+        if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
+            echo "❌ Invalid free space: $free_space"
+            exit 1
+        fi
+        
+        # Calculate pool size (95% of free space)
+        local pool_size=$((free_space * 95 / 100))
+        
+        echo "Free space: ${free_space}G"
+        echo "Pool size: ${pool_size}G"
         
         if lvcreate -L "${pool_size}G" -T pve/data; then
             echo "✅ Thin pool created successfully"
@@ -467,7 +478,18 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         
         echo "📏 Creating thin volume..."
         local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-        local thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
+        
+        # Ensure thin_pool_size is a valid number
+        if [[ ! "$thin_pool_size" =~ ^[0-9]+$ ]]; then
+            echo "❌ Invalid thin pool size: $thin_pool_size"
+            exit 1
+        fi
+        
+        # Calculate thin volume size (95% of pool size)
+        local thin_volume_size=$((thin_pool_size * 95 / 100))
+        
+        echo "Thin pool size: ${thin_pool_size}G"
+        echo "Thin volume size: ${thin_volume_size}G"
         
         if lvcreate -V "${thin_volume_size}G" -T pve/data -n data; then
             echo "✅ Thin volume created successfully"
@@ -498,6 +520,14 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
     
     if ! lvs /dev/pve/data &>/dev/null; then
         local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+        
+        # Ensure free_space is a valid number
+        if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
+            echo "❌ Invalid free space: $free_space"
+            exit 1
+        fi
+        
+        echo "Free space: ${free_space}G"
         
         if lvcreate -L "${free_space}G" -n data pve; then
             echo "✅ Regular LVM volume created successfully"
@@ -550,7 +580,7 @@ EOF
         
         if ! lvs /dev/pve/data >/dev/null 2>&1; then
             local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-            local data_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
+            local data_size=$((free_space * 95 / 100))
             
             lvcreate -L "${data_size}G" -n data pve
             mkfs.ext4 /dev/pve/data
