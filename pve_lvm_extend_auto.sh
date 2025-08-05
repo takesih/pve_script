@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003900"
+echo "V 250806004000"
 echo "=============================="
 
 # Check root privileges
@@ -394,9 +394,40 @@ prepare_linux_pe() {
     
     mount -o loop /tmp/tinycore.iso /mnt
     
-    # Copy kernel and initrd
-    cp /mnt/boot/vmlinuz64 /boot/pe/vmlinuz
-    cp /mnt/boot/corepure64.gz /boot/pe/initrd
+    # Copy kernel and initrd with verification
+    echo "🔧 Copying kernel and initrd..."
+    
+    # Check available kernel files
+    echo "Available kernel files:"
+    ls -la /mnt/boot/vmlinuz* 2>/dev/null || echo "No vmlinuz files found"
+    
+    # Check available initrd files
+    echo "Available initrd files:"
+    ls -la /mnt/boot/core* 2>/dev/null || echo "No core files found"
+    
+    # Copy kernel (try multiple names)
+    if [[ -f "/mnt/boot/vmlinuz64" ]]; then
+        cp /mnt/boot/vmlinuz64 /boot/pe/vmlinuz
+        echo "✅ Copied vmlinuz64"
+    elif [[ -f "/mnt/boot/vmlinuz" ]]; then
+        cp /mnt/boot/vmlinuz /boot/pe/vmlinuz
+        echo "✅ Copied vmlinuz"
+    else
+        echo "❌ Error: No kernel file found"
+        exit 1
+    fi
+    
+    # Copy initrd (try multiple names)
+    if [[ -f "/mnt/boot/corepure64.gz" ]]; then
+        cp /mnt/boot/corepure64.gz /boot/pe/initrd
+        echo "✅ Copied corepure64.gz"
+    elif [[ -f "/mnt/boot/core.gz" ]]; then
+        cp /mnt/boot/core.gz /boot/pe/initrd
+        echo "✅ Copied core.gz"
+    else
+        echo "❌ Error: No initrd file found"
+        exit 1
+    fi
     
     # Create custom initrd with LVM tools
     echo "🔧 Creating custom initrd with LVM tools..."
@@ -443,6 +474,24 @@ prepare_linux_pe() {
     rm -rf /tmp/initrd-extract
     
     echo "✅ Tiny Core Linux PE prepared successfully (Size: ~16MB)"
+    
+    # Verify PE environment
+    echo "🔍 Verifying PE environment..."
+    if [[ -f "/boot/pe/vmlinuz" ]]; then
+        echo "✅ Kernel file exists: $(ls -lh /boot/pe/vmlinuz)"
+    else
+        echo "❌ Error: Kernel file not found"
+        exit 1
+    fi
+    
+    if [[ -f "/boot/pe/initrd-custom" ]]; then
+        echo "✅ Initrd file exists: $(ls -lh /boot/pe/initrd-custom)"
+    else
+        echo "❌ Error: Initrd file not found"
+        exit 1
+    fi
+    
+    echo "✅ PE environment verification completed"
 }
 
 # Function to create automatic PE boot script
@@ -882,13 +931,13 @@ generate_grub_config() {
 exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
-    set root=(hd0,1)
+    search --no-floppy --file --set=root /pe/vmlinuz
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
     initrd /pe/initrd-custom
 }
 
 menuentry "PE Boot - LVM Extension (Alternative)" {
-    set root=(hd0,2)
+    set root=(hd0,1)
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
     initrd /pe/initrd-custom
 }
@@ -896,6 +945,12 @@ menuentry "PE Boot - LVM Extension (Alternative)" {
 menuentry "PE Boot - LVM Extension (GPT)" {
     set root=(hd0,gpt1)
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /pe/initrd-custom
+}
+
+menuentry "PE Boot - LVM Extension (Simple)" {
+    set root=(hd0,1)
+    linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh
     initrd /pe/initrd-custom
 }
 EOF
