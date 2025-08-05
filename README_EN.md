@@ -61,29 +61,7 @@ Script to configure DDNS automatic update for DNSZI service.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin Size Configuration Tool ⚠️ **TESTING - DO NOT USE**
-Script to resize LVM directories and LVM-thin after Proxmox installation.
 
-**⚠️ WARNING: This script is currently in testing and may destroy your system. DO NOT USE!**
-
-**Features:**
-- **Flexible Size Configuration**: Auto/Custom/Percentage-based size settings
-- **Root Volume Resizing**: Safe expansion/shrinking support
-- **LVM-Thin Reconfiguration**: Recreate existing data volume as LVM-thin
-- **Over-provisioning**: Efficient space utilization with 95% over-provisioning
-- **Step-by-step Confirmation**: Safe operation with user confirmation
-
-**Size Configuration Options:**
-1. **Automatic**: Root 20GB, Data remaining space
-2. **Custom**: User-specified sizes
-3. **Percentage**: Root 30%, Data 70%
-
-**Execution:**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
-```
-
-**🚨 CRITICAL: This script is in testing and may cause system data loss. DO NOT use in production environments!**
 
 ### 5. Proxmox ISO Customization Tool
 Script to integrate Realtek R8168 network card driver into Proxmox 8.4 ISO.
@@ -99,30 +77,7 @@ Script to integrate Realtek R8168 network card driver into Proxmox 8.4 ISO.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE Temperature Monitoring Tool ⚠️ **TESTING - DO NOT USE**
-Script to add real-time CPU and disk temperature monitoring to Proxmox VE dashboard.
 
-**⚠️ WARNING: This script is currently in testing and may damage your system. DO NOT USE!**
-
-**Features:**
-- **Hardware Sensor Detection**: Automatic sensor detection using lm-sensors
-- **CPU Temperature Monitoring**: Real-time CPU temperature display
-- **Disk Temperature Monitoring**: Disk temperature display using SMART data
-- **Dashboard Integration**: Temperature information in Proxmox web interface
-- **Automatic Backup**: Automatic backup of original files before modification
-- **Safe Modification**: Safely modify Proxmox API and web interface
-
-**Execution:**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
-```
-
-**🚨 CRITICAL: This script is in testing and modifies Proxmox system files. DO NOT use in production environments!**
-
-**Important Notes:**
-- Works only on physical hardware (VMs don't have temperature sensors)
-- Modifies Proxmox system files (automatic backups are created)
-- Requires web interface refresh after installation (Ctrl+F5)
 
 ---
 

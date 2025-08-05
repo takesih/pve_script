@@ -61,29 +61,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thin大小配置工具 ⚠️ **测试中 - 禁止使用**
-Proxmox安装完成后调整LVM目录和LVM-thin大小的脚本。
 
-**⚠️ 警告：此脚本目前正在测试中，可能会破坏您的系统。请勿使用！**
-
-**功能：**
-- **灵活的大小配置**：自动/自定义/百分比基础的大小设置
-- **根卷调整大小**：安全的扩展/收缩支持
-- **LVM-Thin重新配置**：将现有数据卷重新创建为LVM-thin
-- **过度配置**：95%过度配置实现高效空间利用
-- **分步确认**：通过用户确认进行安全操作
-
-**大小配置选项：**
-1. **自动设置**：根卷20GB，数据卷剩余空间
-2. **自定义设置**：用户指定大小
-3. **百分比设置**：根卷30%，数据卷70%
-
-**执行方法：**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
-```
-
-**🚨 重要：此脚本正在测试中，可能导致系统数据丢失。请勿在生产环境中使用！**
 
 ### 5. Proxmox ISO定制工具
 将Realtek R8168网卡驱动程序集成到Proxmox 8.4 ISO中的脚本。
@@ -99,30 +77,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE温度监控工具 ⚠️ **测试中 - 禁止使用**
-向Proxmox VE仪表板添加实时CPU和磁盘温度监控的脚本。
 
-**⚠️ 警告：此脚本目前正在测试中，可能会损坏您的系统。请勿使用！**
-
-**功能：**
-- **硬件传感器检测**：使用lm-sensors自动检测传感器
-- **CPU温度监控**：实时CPU温度显示
-- **磁盘温度监控**：使用SMART数据显示磁盘温度
-- **仪表板集成**：在Proxmox Web界面中显示温度信息
-- **自动备份**：修改前自动备份原始文件
-- **安全修改**：安全修改Proxmox API和Web界面
-
-**执行方法：**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
-```
-
-**🚨 重要：此脚本正在测试中，会修改Proxmox系统文件。请勿在生产环境中使用！**
-
-**重要说明：**
-- 仅在物理硬件上工作（虚拟机没有温度传感器）
-- 修改Proxmox系统文件（自动创建备份）
-- 安装后需要刷新Web界面（Ctrl+F5）
 
 ---
 

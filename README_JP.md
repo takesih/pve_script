@@ -61,29 +61,7 @@ DNSZIサービスのためのDDNS自動更新を設定するスクリプトで�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. LVM-Thinサイズ設定ツール ⚠️ **テスト中 - 使用禁止**
-Proxmoxインストール完了後にLVMディレクトリとLVM-thinのサイズを変更するスクリプトです。
 
-**⚠️ 警告：このスクリプトは現在テスト中であり、システムを破壊する可能性があります。使用しないでください！**
-
-**機能：**
-- **柔軟なサイズ設定**：自動/カスタム/パーセンテージベースのサイズ設定
-- **Rootボリュームリサイズ**：安全な拡張/縮小サポート
-- **LVM-Thin再構成**：既存データボリュームをLVM-thinとして再作成
-- **オーバープロビジョニング**：95%オーバープロビジョニングによる効率的な容量活用
-- **段階的確認**：ユーザー確認による安全な作業進行
-
-**サイズ設定オプション：**
-1. **自動設定**：Root 20GB、Data 残り容量
-2. **カスタム設定**：ユーザー指定サイズ
-3. **パーセンテージ設定**：Root 30%、Data 70%
-
-**実行方法：**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
-```
-
-**🚨 重要：このスクリプトはテスト中であり、システムデータ損失の可能性があります。本番環境では使用しないでください！**
 
 ### 5. Proxmox ISOカスタマイズツール
 Proxmox 8.4 ISOにRealtek R8168ネットワークカードドライバーを統合するスクリプトです。
@@ -99,30 +77,7 @@ Proxmox 8.4 ISOにRealtek R8168ネットワークカードドライバーを統�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Proxmox VE温度監視ツール ⚠️ **テスト中 - 使用禁止**
-Proxmox VEダッシュボードにリアルタイムCPUおよびディスク温度監視を追加するスクリプトです。
 
-**⚠️ 警告：このスクリプトは現在テスト中であり、システムを損傷する可能性があります。使用しないでください！**
-
-**機能：**
-- **ハードウェアセンサー検出**：lm-sensorsを使用した自動センサー検出
-- **CPU温度監視**：リアルタイムCPU温度表示
-- **ディスク温度監視**：SMARTデータを使用したディスク温度表示
-- **ダッシュボード統合**：Proxmox Webインターフェースに温度情報表示
-- **自動バックアップ**：変更前の元ファイル自動バックアップ
-- **安全な変更**：Proxmox APIとWebインターフェースの安全な変更
-
-**実行方法：**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
-```
-
-**🚨 重要：このスクリプトはテスト中であり、Proxmoxシステムファイルを変更します。本番環境では使用しないでください！**
-
-**重要な注意事項：**
-- 物理ハードウェアでのみ動作（仮想マシンには温度センサーなし）
-- Proxmoxシステムファイルを変更（自動バックアップが作成されます）
-- インストール後にWebインターフェースの更新が必要（Ctrl+F5）
 
 ---
 

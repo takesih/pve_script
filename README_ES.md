@@ -61,29 +61,7 @@ Script para configurar la actualización automática DDNS para el servicio DNSZI
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Herramienta de Configuración de Tamaño LVM-Thin ⚠️ **EN PRUEBAS - NO USAR**
-Script para redimensionar directorios LVM y LVM-thin después de la instalación de Proxmox.
 
-**⚠️ ADVERTENCIA: Este script está actualmente en pruebas y puede destruir su sistema. ¡NO LO USE!**
-
-**Características:**
-- **Configuración de Tamaño Flexible**: Configuración automática/personalizada/basada en porcentajes
-- **Redimensionamiento de Volumen Root**: Soporte seguro para expansión/reducción
-- **Reconfiguración LVM-Thin**: Recrear volumen de datos existente como LVM-thin
-- **Sobre-aprovisionamiento**: Utilización eficiente del espacio con 95% de sobre-aprovisionamiento
-- **Confirmación Paso a Paso**: Operación segura con confirmación del usuario
-
-**Opciones de Configuración de Tamaño:**
-1. **Automático**: Root 20GB, Data espacio restante
-2. **Personalizado**: Tamaños especificados por el usuario
-3. **Porcentaje**: Root 30%, Data 70%
-
-**Ejecución:**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_lvm_thin_setup.sh)"
-```
-
-**🚨 CRÍTICO: Este script está en pruebas y puede causar pérdida de datos del sistema. ¡NO use en entornos de producción!**
 
 ### 5. Herramienta de Personalización ISO Proxmox
 Script para integrar el controlador de tarjeta de red Realtek R8168 en el ISO de Proxmox 8.4.
@@ -99,30 +77,7 @@ Script para integrar el controlador de tarjeta de red Realtek R8168 en el ISO de
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/proxmox_iso_customize.sh)"
 ```
 
-### 6. Herramienta de Monitoreo de Temperatura Proxmox VE ⚠️ **EN PRUEBAS - NO USAR**
-Script para agregar monitoreo en tiempo real de temperatura de CPU y disco al panel de Proxmox VE.
 
-**⚠️ ADVERTENCIA: Este script está actualmente en pruebas y puede dañar su sistema. ¡NO LO USE!**
-
-**Características:**
-- **Detección de Sensores de Hardware**: Detección automática de sensores usando lm-sensors
-- **Monitoreo de Temperatura CPU**: Visualización en tiempo real de temperatura CPU
-- **Monitoreo de Temperatura de Disco**: Visualización de temperatura de disco usando datos SMART
-- **Integración en Panel**: Información de temperatura en interfaz web de Proxmox
-- **Respaldo Automático**: Respaldo automático de archivos originales antes de modificación
-- **Modificación Segura**: Modificación segura de API y interfaz web de Proxmox
-
-**Ejecución:**
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/pve_temperature_monitor.sh)"
-```
-
-**🚨 CRÍTICO: Este script está en pruebas y modifica archivos del sistema Proxmox. ¡NO use en entornos de producción!**
-
-**Notas Importantes:**
-- Solo funciona en hardware físico (las VMs no tienen sensores de temperatura)
-- Modifica archivos del sistema Proxmox (se crean respaldos automáticos)
-- Requiere actualizar interfaz web después de instalación (Ctrl+F5)
 
 ---
 
