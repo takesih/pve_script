@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004700"
+echo "V 250806004800"
 echo "=============================="
 
 # Check root privileges
@@ -1032,6 +1032,13 @@ EOF
     
     # Update GRUB with error handling
     echo "🔄 Updating GRUB configuration..."
+    
+    # Clean up old GRUB entries first
+    if [[ -f "/etc/grub.d/41_pe_lvm_extend_backup" ]]; then
+        rm -f /etc/grub.d/41_pe_lvm_extend_backup
+        echo "  - Removed old backup GRUB entry"
+    fi
+    
     if update-grub; then
         echo "✅ GRUB configuration updated successfully"
     else
