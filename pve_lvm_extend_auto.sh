@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003200"
+echo "V 250806003300"
 echo "=============================="
 
 # Check root privileges
@@ -736,10 +736,6 @@ sleep 5
 # Reboot to Proxmox VE
 reboot
 EOF
-
-    chmod +x /boot/pe/auto-lvm-extend.sh
-    echo "✅ PE boot script created successfully"
-}
 
     chmod +x /boot/pe/auto-lvm-extend.sh
     
