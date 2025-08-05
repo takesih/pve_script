@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806001500"
+echo "V 250806002440"
 echo "=============================="
 
 # Check root privileges
@@ -229,11 +229,44 @@ collect_configuration() {
 calculate_sizes() {
     local total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
     
+    # Validate total_vg_size
+    if [[ -z "$total_vg_size" ]] || [[ "$total_vg_size" -eq 0 ]]; then
+        echo "❌ Error: Invalid or zero volume group size detected"
+        echo "Current VG size: $total_vg_size"
+        exit 1
+    fi
+    
+    echo "Total VG size: ${total_vg_size}G"
+    
     if [[ "$ROOT_SIZE" == *"%" ]]; then
         local root_percent=${ROOT_SIZE%\%}
-        ROOT_SIZE_CALC=$((total_vg_size * root_percent / 100))G
+        
+        # Validate percentage
+        if [[ "$root_percent" -lt 1 ]] || [[ "$root_percent" -gt 100 ]]; then
+            echo "❌ Error: Invalid percentage value: $root_percent%"
+            exit 1
+        fi
+        
+        # Calculate size with proper validation
+        local calculated_size=$((total_vg_size * root_percent / 100))
+        
+        # Validate calculated size
+        if [[ "$calculated_size" -lt 1 ]]; then
+            echo "❌ Error: Calculated root size is too small: ${calculated_size}G"
+            echo "Minimum recommended size is 1G"
+            exit 1
+        fi
+        
+        ROOT_SIZE_CALC="${calculated_size}G"
     else
-        ROOT_SIZE_CALC="$ROOT_SIZE"
+        # For non-percentage sizes, validate the format
+        if [[ "$ROOT_SIZE" =~ ^[0-9]+[KMGTPEkmgtpe]?$ ]]; then
+            ROOT_SIZE_CALC="$ROOT_SIZE"
+        else
+            echo "❌ Error: Invalid size format: $ROOT_SIZE"
+            echo "Valid formats: 15G, 20G, 1T, etc."
+            exit 1
+        fi
     fi
     
     echo "Calculated root size: $ROOT_SIZE_CALC"
@@ -419,12 +452,33 @@ echo ""
 lvs --units g
 echo ""
 
+# Validate volume group size
+echo "🔍 Validating volume group size..."
+local total_vg_size=$(vgs --noheadings --units g --nosuffix -o vg_size pve | tr -d ' ')
+if [[ -z "$total_vg_size" ]] || [[ "$total_vg_size" -eq 0 ]]; then
+    echo "❌ Error: Invalid or zero volume group size detected"
+    echo "Current VG size: $total_vg_size"
+    echo "Cannot proceed with LVM operations"
+    exit 1
+fi
+echo "✅ Volume group size validated: ${total_vg_size}G"
+
 # Perform LVM operations
 echo "🔄 Performing LVM extension operations..."
 
 # Resize physical volume
 echo "📏 Resizing physical volume..."
-if pvresize /dev/nvme0n1p3; then
+
+# Detect the correct physical volume device
+local pv_device=$(pvs --noheadings -o pv_name | head -1 | tr -d ' ')
+if [[ -z "$pv_device" ]]; then
+    echo "❌ Error: No physical volume found"
+    exit 1
+fi
+
+echo "Detected physical volume: $pv_device"
+
+if pvresize "$pv_device"; then
     echo "✅ Physical volume resized successfully"
 else
     echo "⚠️  Physical volume resize failed, continuing..."
@@ -432,6 +486,14 @@ fi
 
 # Extend root volume
 echo "📏 Extending root volume to $ROOT_SIZE_CALC..."
+
+# Validate ROOT_SIZE_CALC
+if [[ -z "$ROOT_SIZE_CALC" ]] || [[ "$ROOT_SIZE_CALC" == "G" ]] || [[ "$ROOT_SIZE_CALC" == "0G" ]]; then
+    echo "❌ Error: Invalid root size calculated: $ROOT_SIZE_CALC"
+    echo "Using default size of 15G"
+    ROOT_SIZE_CALC="15G"
+fi
+
 if lvextend -L "$ROOT_SIZE_CALC" /dev/pve/root; then
     echo "✅ Root volume extended successfully"
 else
@@ -459,14 +521,28 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         # Create thin pool with explicit size specification
         echo "Creating thin pool with 50G size..."
         
+        # Validate size before creating thin pool
+        local thin_pool_size=50
+        if [[ "$thin_pool_size" -lt 1 ]]; then
+            echo "❌ Error: Invalid thin pool size: ${thin_pool_size}G"
+            echo "Using minimum size of 1G"
+            thin_pool_size=1
+        fi
+        
         # Use explicit size without variable
-        if lvcreate -L 50G -T pve/data; then
+        if lvcreate -L ${thin_pool_size}G -T pve/data; then
             echo "✅ Thin pool created successfully"
         else
             echo "❌ Thin pool creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -L 25G -T pve/data; then
+            local fallback_pool_size=25
+            if [[ "$fallback_pool_size" -lt 1 ]]; then
+                echo "❌ Error: Invalid fallback pool size: ${fallback_pool_size}G"
+                echo "Using minimum size of 1G"
+                fallback_pool_size=1
+            fi
+            if lvcreate -L ${fallback_pool_size}G -T pve/data; then
                 echo "✅ Thin pool created with smaller size"
             else
                 echo "❌ Thin pool creation failed even with smaller size"
@@ -479,14 +555,28 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         # Create thin volume with explicit size specification
         echo "Creating thin volume with 20G size..."
         
+        # Validate size before creating thin volume
+        local thin_volume_size=20
+        if [[ "$thin_volume_size" -lt 1 ]]; then
+            echo "❌ Error: Invalid thin volume size: ${thin_volume_size}G"
+            echo "Using minimum size of 1G"
+            thin_volume_size=1
+        fi
+        
         # Use explicit size without variable
-        if lvcreate -V 20G -T pve/data -n data; then
+        if lvcreate -V ${thin_volume_size}G -T pve/data -n data; then
             echo "✅ Thin volume created successfully"
         else
             echo "❌ Thin volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -V 10G -T pve/data -n data; then
+            local fallback_size=10
+            if [[ "$fallback_size" -lt 1 ]]; then
+                echo "❌ Error: Invalid fallback size: ${fallback_size}G"
+                echo "Using minimum size of 1G"
+                fallback_size=1
+            fi
+            if lvcreate -V ${fallback_size}G -T pve/data -n data; then
                 echo "✅ Thin volume created with smaller size"
             else
                 echo "❌ Thin volume creation failed even with smaller size"
@@ -518,14 +608,28 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
         # Create regular LVM volume with explicit size specification
         echo "Creating regular LVM volume with 50G size..."
         
+        # Validate size before creating regular volume
+        local regular_volume_size=50
+        if [[ "$regular_volume_size" -lt 1 ]]; then
+            echo "❌ Error: Invalid regular volume size: ${regular_volume_size}G"
+            echo "Using minimum size of 1G"
+            regular_volume_size=1
+        fi
+        
         # Use explicit size without variable
-        if lvcreate -L 50G -n data pve; then
+        if lvcreate -L ${regular_volume_size}G -n data pve; then
             echo "✅ Regular LVM volume created successfully"
         else
             echo "❌ Regular LVM volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -L 25G -n data pve; then
+            local fallback_regular_size=25
+            if [[ "$fallback_regular_size" -lt 1 ]]; then
+                echo "❌ Error: Invalid fallback regular size: ${fallback_regular_size}G"
+                echo "Using minimum size of 1G"
+                fallback_regular_size=1
+            fi
+            if lvcreate -L ${fallback_regular_size}G -n data pve; then
                 echo "✅ Regular LVM volume created with smaller size"
             else
                 echo "❌ Regular LVM volume creation failed even with smaller size"
@@ -563,7 +667,6 @@ EOF
     chmod +x /boot/pe/auto-lvm-extend.sh
     echo "✅ PE boot script created successfully"
 }
-            lvcreate -V "${thin_volume_size}G" -T pve/data -n data
             
             mkfs.ext4 /dev/pve/data
             log_message "LVM-thin data volume created successfully"
