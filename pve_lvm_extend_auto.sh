@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003600"
+echo "V 250806003700"
 echo "=============================="
 
 # Check root privileges
@@ -828,17 +828,24 @@ generate_grub_config() {
     fi
     
     # Determine GRUB root specification based on system configuration
-    if [[ "$PARTITION_TABLE" == "gpt" ]]; then
-        if [[ -n "$grub_device" ]]; then
-            grub_root="${grub_device},gpt1"
-        else
-            grub_root="(hd0,gpt1)"
-        fi
+    # Try to detect the actual boot partition more reliably
+    local boot_uuid=$(blkid -s UUID -o value /boot 2>/dev/null)
+    if [[ -n "$boot_uuid" ]]; then
+        echo "Detected boot UUID: $boot_uuid"
+        grub_root="search --no-floppy --fs-uuid --set=root $boot_uuid"
     else
-        if [[ -n "$grub_device" ]]; then
-            grub_root="${grub_device},1"
+        if [[ "$PARTITION_TABLE" == "gpt" ]]; then
+            if [[ -n "$grub_device" ]]; then
+                grub_root="set root=${grub_device},gpt1"
+            else
+                grub_root="set root=(hd0,gpt1)"
+            fi
         else
-            grub_root="(hd0,1)"
+            if [[ -n "$grub_device" ]]; then
+                grub_root="set root=${grub_device},1"
+            else
+                grub_root="set root=(hd0,1)"
+            fi
         fi
     fi
     
@@ -876,7 +883,9 @@ EOF
     insmod part_gpt
     insmod part_msdos
     insmod lvm
-    set root=$grub_root
+    insmod loopback
+    insmod iso9660
+    $grub_root
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
 }
