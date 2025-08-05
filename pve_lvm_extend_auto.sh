@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005100"
+echo "V 250806005200"
 echo "=============================="
 
 # Check root privileges
@@ -377,38 +377,42 @@ EOF
     
     echo "✅ Configuration file created"
     
-    # Embed script into initrd
-    echo "🔧 Embedding script into initrd..."
+    # Create a simple initrd-based approach
+    echo "🔧 Creating simple initrd-based PE environment..."
+    
+    # Create a minimal initrd with our script
+    echo "📦 Creating minimal initrd..."
     
     # Create temporary directory
-    mkdir -p /tmp/initrd-extract
-    cd /tmp/initrd-extract
+    mkdir -p /tmp/initrd-minimal
+    cd /tmp/initrd-minimal
     
-    # Extract current initrd
-    echo "📦 Extracting initrd..."
-    zcat /boot/initrd_pe | cpio -idmv
+    # Create basic directory structure
+    mkdir -p bin dev proc sys lib lib64 sbin usr/bin usr/sbin
     
-    # Copy PE script into initrd
-    echo "📝 Copying PE script into initrd..."
-    cp /boot/pe/auto-lvm-extend.sh ./auto-lvm-extend.sh
-    chmod +x ./auto-lvm-extend.sh
+    # Copy essential binaries (if available)
+    if [[ -f "/bin/busybox" ]]; then
+        cp /bin/busybox bin/
+    elif [[ -f "/bin/sh" ]]; then
+        cp /bin/sh bin/
+    fi
     
-    # Create init script that will run our PE script
+    # Create init script
     echo "📝 Creating init script..."
     cat > ./init << 'INIT_EOF'
 #!/bin/sh
 
-# Mount necessary filesystems
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
+echo "🚀 Starting minimal PE environment..."
 
-# Create device nodes
-mknod /dev/console c 5 1
-mknod /dev/null c 1 3
-mknod /dev/zero c 1 5
-mknod /dev/random c 1 8
-mknod /dev/urandom c 1 9
+# Mount essential filesystems
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+
+# Create essential device nodes
+mknod /dev/console c 5 1 2>/dev/null || true
+mknod /dev/null c 1 3 2>/dev/null || true
+mknod /dev/zero c 1 5 2>/dev/null || true
 
 # Set up environment
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
@@ -419,32 +423,88 @@ export TERM=linux
 modprobe dm-mod 2>/dev/null || true
 modprobe lvm 2>/dev/null || true
 
-# Wait for devices to be ready
-sleep 2
+# Wait for system to be ready
+sleep 3
 
-# Run our LVM extension script
-if [[ -f "/auto-lvm-extend.sh" ]]; then
-    echo "🚀 Starting embedded LVM extension script..."
-    exec /auto-lvm-extend.sh
-else
-    echo "❌ Error: LVM extension script not found in initrd"
+echo "📊 System status:"
+df -h 2>/dev/null || echo "df not available"
+echo ""
+
+echo "📊 LVM status:"
+lvs --units g 2>/dev/null || echo "lvs not available"
+echo ""
+
+echo "🔄 Performing LVM operations..."
+
+# Get the first physical volume
+PV_DEVICE=$(pvs --noheadings -o pv_name 2>/dev/null | head -1 | tr -d ' ')
+if [[ -z "$PV_DEVICE" ]]; then
+    echo "❌ Error: No physical volume found"
     echo "🔄 Rebooting in 10 seconds..."
     sleep 10
     reboot
 fi
+
+echo "✅ Physical volume: $PV_DEVICE"
+
+# Resize physical volume
+echo "🔄 Resizing physical volume..."
+if pvresize "$PV_DEVICE" 2>/dev/null; then
+    echo "✅ Physical volume resized successfully"
+else
+    echo "❌ Error: Failed to resize physical volume"
+    echo "🔄 Rebooting in 10 seconds..."
+    sleep 10
+    reboot
+fi
+
+# Extend root logical volume
+echo "🔄 Extending root logical volume..."
+if lvextend -l +100%FREE /dev/pve/root 2>/dev/null; then
+    echo "✅ Root logical volume extended successfully"
+else
+    echo "❌ Error: Failed to extend root logical volume"
+    echo "🔄 Rebooting in 10 seconds..."
+    sleep 10
+    reboot
+fi
+
+# Resize filesystem
+echo "🔄 Resizing filesystem..."
+if resize2fs /dev/pve/root 2>/dev/null; then
+    echo "✅ Filesystem resized successfully"
+else
+    echo "❌ Error: Failed to resize filesystem"
+    echo "🔄 Rebooting in 10 seconds..."
+    sleep 10
+    reboot
+fi
+
+echo "📊 Final system status:"
+df -h 2>/dev/null || echo "df not available"
+echo ""
+
+echo "📊 Final LVM status:"
+lvs --units g 2>/dev/null || echo "lvs not available"
+echo ""
+
+echo "✅ LVM operations completed successfully!"
+echo "🔄 Rebooting in 5 seconds..."
+sleep 5
+reboot
 INIT_EOF
 
     chmod +x ./init
     
-    # Repack initrd
-    echo "📦 Repacking initrd with embedded script..."
+    # Create minimal initrd
+    echo "📦 Creating minimal initrd..."
     find . | cpio -o -H newc | gzip > /boot/initrd_pe
     
     # Cleanup
     cd /
-    rm -rf /tmp/initrd-extract
+    rm -rf /tmp/initrd-minimal
     
-    echo "✅ Built-in PE environment prepared successfully with embedded script"
+    echo "✅ Minimal PE environment prepared successfully"
 }
 
 # Function to configure GRUB for built-in PE boot
