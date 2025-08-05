@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004300"
+echo "V 250806004400"
 echo "=============================="
 
 # Check root privileges
@@ -340,19 +340,19 @@ cleanup_existing_pe_config() {
 
 # Function to download and prepare Linux PE
 prepare_linux_pe() {
-    echo "🔄 Preparing Tiny Core Linux PE for automatic boot..."
+    echo "🔄 Preparing SystemRescueCD PE for automatic boot..."
     
     # Create PE directory
     mkdir -p /boot/pe
     
-    # Download Tiny Core Linux with parallel download for speed
-    echo "📥 Downloading Tiny Core Linux with parallel download..."
+    # Download SystemRescueCD with parallel download for speed
+    echo "📥 Downloading SystemRescueCD with parallel download..."
     
     # Define multiple mirrors for reliability
     local mirrors=(
-        "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
-        "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
-        "https://distro.ibiblio.org/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+        "https://downloads.sourceforge.net/systemrescuecd/sysresccd-x86-11.00.iso"
+        "https://sourceforge.net/projects/systemrescuecd/files/sysresccd-x86-11.00.iso"
+        "https://osdn.net/projects/systemrescuecd/downloads/11.00/sysresccd-x86-11.00.iso"
     )
     
     local download_success=false
@@ -379,7 +379,7 @@ prepare_linux_pe() {
     done
     
     if [[ "$download_success" == "false" ]]; then
-        echo "❌ Error: Failed to download Tiny Core Linux from all mirrors"
+        echo "❌ Error: Failed to download SystemRescueCD from all mirrors"
         exit 1
     fi
     
@@ -392,7 +392,7 @@ prepare_linux_pe() {
         umount /mnt 2>/dev/null || true
     fi
     
-    mount -o loop /tmp/tinycore.iso /mnt
+    mount -o loop /tmp/sysresccd.iso /mnt
     
     # Copy kernel and initrd with verification
     echo "🔧 Copying kernel and initrd..."
@@ -403,13 +403,10 @@ prepare_linux_pe() {
     
     # Check available initrd files
     echo "Available initrd files:"
-    ls -la /mnt/boot/core* 2>/dev/null || echo "No core files found"
+    ls -la /mnt/boot/sysresccd* 2>/dev/null || echo "No sysresccd files found"
     
-    # Copy kernel (try multiple names)
-    if [[ -f "/mnt/boot/vmlinuz64" ]]; then
-        cp /mnt/boot/vmlinuz64 /boot/vmlinuz_pe
-        echo "✅ Copied vmlinuz64"
-    elif [[ -f "/mnt/boot/vmlinuz" ]]; then
+    # Copy kernel (SystemRescueCD uses standard names)
+    if [[ -f "/mnt/boot/vmlinuz" ]]; then
         cp /mnt/boot/vmlinuz /boot/vmlinuz_pe
         echo "✅ Copied vmlinuz"
     else
@@ -417,66 +414,31 @@ prepare_linux_pe() {
         exit 1
     fi
     
-    # Copy initrd (try multiple names)
-    if [[ -f "/mnt/boot/corepure64.gz" ]]; then
-        cp /mnt/boot/corepure64.gz /boot/initrd_pe
-        echo "✅ Copied corepure64.gz"
-    elif [[ -f "/mnt/boot/core.gz" ]]; then
-        cp /mnt/boot/core.gz /boot/initrd_pe
-        echo "✅ Copied core.gz"
+    # Copy initrd (SystemRescueCD uses sysresccd.img)
+    if [[ -f "/mnt/boot/sysresccd.img" ]]; then
+        cp /mnt/boot/sysresccd.img /boot/initrd_pe
+        echo "✅ Copied sysresccd.img"
+    elif [[ -f "/mnt/boot/initram.igz" ]]; then
+        cp /mnt/boot/initram.igz /boot/initrd_pe
+        echo "✅ Copied initram.igz"
     else
         echo "❌ Error: No initrd file found"
         exit 1
     fi
     
-    # Create custom initrd with LVM tools
-    echo "🔧 Creating custom initrd with LVM tools..."
-    mkdir -p /tmp/initrd-extract
-    cd /tmp/initrd-extract
-    zcat /boot/initrd_pe | cpio -idmv
+    # SystemRescueCD already has all LVM tools, no need to modify initrd
+    echo "🔧 SystemRescueCD initrd is ready (contains all LVM tools)"
     
-    # Add LVM tools to initrd (Tiny Core already has basic LVM tools)
-    # Copy additional tools if needed
-    if [[ -f "/sbin/lvs" ]]; then
-        cp /sbin/lvs /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/vgs" ]]; then
-        cp /sbin/vgs /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/pvs" ]]; then
-        cp /sbin/pvs /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/lvcreate" ]]; then
-        cp /sbin/lvcreate /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/lvextend" ]]; then
-        cp /sbin/lvextend /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/pvresize" ]]; then
-        cp /sbin/pvresize /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/resize2fs" ]]; then
-        cp /sbin/resize2fs /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/sbin/mkfs.ext4" ]]; then
-        cp /sbin/mkfs.ext4 /tmp/initrd-extract/sbin/ 2>/dev/null || true
-    fi
-    if [[ -f "/usr/bin/bc" ]]; then
-        cp /usr/bin/bc /tmp/initrd-extract/usr/bin/ 2>/dev/null || true
-    fi
-    
-    # Create PE script directory in initrd and copy PE script
-    mkdir -p /tmp/initrd-extract/boot/pe
+    # Create PE script directory and copy PE script
+    mkdir -p /boot/pe
     if [[ -f "/boot/pe/auto-lvm-extend.sh" ]]; then
-        cp /boot/pe/auto-lvm-extend.sh /tmp/initrd-extract/boot/pe/
-        chmod +x /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh
-        echo "✅ PE script copied to initrd"
+        echo "✅ PE script already exists"
     else
-        echo "⚠️  PE script not found, will create in initrd"
-        # Create basic PE script in initrd
-        cat > /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh << 'INITRD_EOF'
+        echo "⚠️  PE script not found, will create"
+        # Create basic PE script
+        cat > /boot/pe/auto-lvm-extend.sh << 'PE_EOF'
 #!/bin/sh
-echo "🚀 Starting automatic LVM extension in PE environment..."
+echo "🚀 Starting automatic LVM extension in SystemRescueCD environment..."
 sleep 5
 echo "📊 Current system status:"
 df -h
@@ -491,20 +453,65 @@ resize2fs /dev/pve/root
 echo "✅ LVM operations completed"
 echo "🔄 Rebooting..."
 reboot
-INITRD_EOF
-        chmod +x /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh
-        echo "✅ Basic PE script created in initrd"
+PE_EOF
+        chmod +x /boot/pe/auto-lvm-extend.sh
+        echo "✅ Basic PE script created"
     fi
     
-    # Repack initrd
-    find . | cpio -o -H newc | gzip > /boot/initrd_pe
-    
     # Cleanup
-    cd /
     umount /mnt
-    rm -rf /tmp/initrd-extract
     
-    echo "✅ Tiny Core Linux PE prepared successfully (Size: ~16MB)"
+    echo "✅ SystemRescueCD PE prepared successfully (Size: ~700MB)"
+    
+    # Verify PE environment
+    echo "🔍 Verifying PE environment..."
+    if [[ -f "/boot/vmlinuz_pe" ]]; then
+        echo "✅ Kernel file exists: $(ls -lh /boot/vmlinuz_pe)"
+    else
+        echo "❌ Error: Kernel file not found"
+        exit 1
+    fi
+    
+    if [[ -f "/boot/initrd_pe" ]]; then
+        echo "✅ Initrd file exists: $(ls -lh /boot/initrd_pe)"
+    else
+        echo "❌ Error: Initrd file not found"
+        exit 1
+    fi
+    
+    echo "✅ PE environment verification completed"
+    
+    # Additional verification and debugging
+    echo "🔍 Additional PE file verification..."
+    echo "PE directory contents:"
+    ls -la /boot/pe/ 2>/dev/null || echo "❌ /boot/pe/ directory not found"
+    
+    echo "Kernel file details:"
+    if [[ -f "/boot/vmlinuz_pe" ]]; then
+        file /boot/vmlinuz_pe
+        ls -lh /boot/vmlinuz_pe
+    else
+        echo "❌ Kernel file not found at /boot/vmlinuz_pe"
+    fi
+    
+    echo "Initrd file details:"
+    if [[ -f "/boot/initrd_pe" ]]; then
+        file /boot/initrd_pe
+        ls -lh /boot/initrd_pe
+    else
+        echo "❌ Initrd file not found at /boot/initrd_pe"
+    fi
+    
+    # Check if files are accessible from GRUB perspective
+    echo "🔍 Checking file accessibility..."
+    if [[ -f "/boot/vmlinuz_pe" ]] && [[ -f "/boot/initrd_pe" ]]; then
+        echo "✅ PE files are accessible"
+        echo "Kernel size: $(stat -c%s /boot/vmlinuz_pe) bytes"
+        echo "Initrd size: $(stat -c%s /boot/initrd_pe) bytes"
+    else
+        echo "❌ PE files are not accessible"
+        exit 1
+    fi
     
     # Verify PE environment
     echo "🔍 Verifying PE environment..."
@@ -992,7 +999,7 @@ generate_grub_config() {
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
-# PE Boot entry for LVM extension
+# PE Boot entry for LVM extension (SystemRescueCD)
 menuentry "PE Boot - LVM Extension" {
     set root=(hd0,1)
     linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
