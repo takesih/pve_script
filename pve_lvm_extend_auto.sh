@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004600"
+echo "V 250806004700"
 echo "=============================="
 
 # Check root privileges
@@ -407,7 +407,7 @@ prepare_linux_pe() {
     
     # Copy kernel (GParted Live uses live/vmlinuz)
     if [[ -f "/mnt/live/vmlinuz" ]]; then
-        cp /mnt/live/vmlinuz /boot/vmlinuz_pe
+        cp /mnt/live/vmlinuz /boot/vmlinuz
         echo "✅ Copied vmlinuz"
     else
         echo "❌ Error: No kernel file found"
@@ -416,7 +416,7 @@ prepare_linux_pe() {
     
     # Copy initrd (GParted Live uses live/initrd.img)
     if [[ -f "/mnt/live/initrd.img" ]]; then
-        cp /mnt/live/initrd.img /boot/initrd_pe
+        cp /mnt/live/initrd.img /boot/initrd.img
         echo "✅ Copied initrd.img"
     else
         echo "❌ Error: No initrd file found"
@@ -999,32 +999,32 @@ exec tail -n +3 \$0
 # PE Boot entry for LVM extension (GParted Live)
 menuentry "PE Boot - LVM Extension" {
     set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd.img
 }
 
 menuentry "PE Boot - LVM Extension (Alternative)" {
     set root=(hd0,2)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd.img
 }
 
 menuentry "PE Boot - LVM Extension (GPT)" {
     set root=(hd0,gpt1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd.img
 }
 
 menuentry "PE Boot - LVM Extension (Simple)" {
     set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh
+    initrd /boot/initrd.img
 }
 
 menuentry "PE Boot - LVM Extension (Debug)" {
     set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug
+    initrd /boot/initrd.img
 }
 EOF
 
@@ -1063,8 +1063,8 @@ exec tail -n +3 \$0
 # PE Boot entry for LVM extension (Backup)
 menuentry "PE Boot - LVM Extension (Backup)" {
     set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/initrd_pe
+    linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd.img
 }
 EOF
 
@@ -1117,15 +1117,15 @@ provide_automatic_boot_info() {
     echo "   - 'PE Boot - LVM Extension (Debug)'"
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
     echo "4. Try these commands in order:"
-    echo "   - set root=(hd0,1) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - set root=(hd0,2) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - set root=(hd0,gpt1) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - initrd /boot/initrd_pe"
+    echo "   - set root=(hd0,1) && linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - set root=(hd0,2) && linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - set root=(hd0,gpt1) && linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - initrd /boot/initrd.img"
     echo "5. Press Ctrl+X to boot"
     echo ""
     echo "🔍 Debug mode (if normal boot fails):"
     echo "   - Select 'PE Boot - LVM Extension (Debug)' for verbose output"
-    echo "   - Or manually: linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug"
+    echo "   - Or manually: linux /boot/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug"
     echo ""
     echo "Press ENTER to continue or ESC to cancel..."
     
