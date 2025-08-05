@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005300"
+echo "V 250806005400"
 echo "=============================="
 
 # Check root privileges
@@ -377,149 +377,16 @@ EOF
     
     echo "✅ Configuration file created"
     
-    # Create a simple initrd-based approach
-    echo "🔧 Creating simple initrd-based PE environment..."
+    # Use Proxmox VE's actual initrd directly
+    echo "🔧 Using Proxmox VE's actual initrd directly..."
     
-    # Create a minimal initrd with our script
-    echo "📦 Creating minimal initrd..."
-    
-    # Create temporary directory
-    mkdir -p /tmp/initrd-minimal
-    cd /tmp/initrd-minimal
-    
-    # Create basic directory structure
-    mkdir -p bin dev proc sys lib lib64 sbin usr/bin usr/sbin
-    
-    # Copy essential binaries (if available)
-    if [[ -f "/bin/busybox" ]]; then
-        cp /bin/busybox bin/
-        ln -sf /bin/busybox bin/sh
-        ln -sf /bin/busybox bin/mount
-        ln -sf /bin/busybox bin/mknod
-        ln -sf /bin/busybox bin/sleep
-        ln -sf /bin/busybox bin/echo
-        ln -sf /bin/busybox bin/df
-        ln -sf /bin/busybox bin/ls
-        ln -sf /bin/busybox bin/reboot
-    elif [[ -f "/bin/sh" ]]; then
-        cp /bin/sh bin/
-    fi
-    
-    # Create init script
-    echo "📝 Creating init script..."
-    cat > ./init << 'INIT_EOF'
-#!/bin/sh
-
-echo "🚀 Starting minimal PE environment..."
-
-# Mount essential filesystems
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sysfs /sys 2>/dev/null || true
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-
-# Create essential device nodes
-mknod /dev/console c 5 1 2>/dev/null || true
-mknod /dev/null c 1 3 2>/dev/null || true
-mknod /dev/zero c 1 5 2>/dev/null || true
-
-# Set up environment
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-export HOME=/
-export TERM=linux
-
-# Load LVM modules
-modprobe dm-mod 2>/dev/null || true
-modprobe lvm 2>/dev/null || true
-
-# Wait for system to be ready
-sleep 3
-
-echo "📊 System status:"
-df -h 2>/dev/null || echo "df not available"
-echo ""
-
-echo "📊 LVM status:"
-lvs --units g 2>/dev/null || echo "lvs not available"
-echo ""
-
-echo "🔄 Performing LVM operations..."
-
-# Get the first physical volume
-PV_DEVICE=$(pvs --noheadings -o pv_name 2>/dev/null | head -1 | tr -d ' ')
-if [[ -z "$PV_DEVICE" ]]; then
-    echo "❌ Error: No physical volume found"
-    echo "🔄 Rebooting in 10 seconds..."
-    sleep 10
-    reboot
-fi
-
-echo "✅ Physical volume: $PV_DEVICE"
-
-# Resize physical volume
-echo "🔄 Resizing physical volume..."
-if pvresize "$PV_DEVICE" 2>/dev/null; then
-    echo "✅ Physical volume resized successfully"
-else
-    echo "❌ Error: Failed to resize physical volume"
-    echo "🔄 Rebooting in 10 seconds..."
-    sleep 10
-    reboot
-fi
-
-# Extend root logical volume
-echo "🔄 Extending root logical volume..."
-if lvextend -l +100%FREE /dev/pve/root 2>/dev/null; then
-    echo "✅ Root logical volume extended successfully"
-else
-    echo "❌ Error: Failed to extend root logical volume"
-    echo "🔄 Rebooting in 10 seconds..."
-    sleep 10
-    reboot
-fi
-
-# Resize filesystem
-echo "🔄 Resizing filesystem..."
-if resize2fs /dev/pve/root 2>/dev/null; then
-    echo "✅ Filesystem resized successfully"
-else
-    echo "❌ Error: Failed to resize filesystem"
-    echo "🔄 Rebooting in 10 seconds..."
-    sleep 10
-    reboot
-fi
-
-echo "📊 Final system status:"
-df -h 2>/dev/null || echo "df not available"
-echo ""
-
-echo "📊 Final LVM status:"
-lvs --units g 2>/dev/null || echo "lvs not available"
-echo ""
-
-echo "✅ LVM operations completed successfully!"
-echo "🔄 Rebooting in 5 seconds..."
-sleep 5
-reboot
-INIT_EOF
-
-    chmod +x ./init
-    
-    # Verify init script exists
-    echo "🔍 Verifying init script..."
-    if [[ -f "./init" ]]; then
-        echo "✅ Init script created successfully"
-        ls -la ./init
+    # Copy the actual Proxmox VE initrd
+    if [[ -f "/boot/initrd.img-$(uname -r)" ]]; then
+        cp "/boot/initrd.img-$(uname -r)" /boot/initrd_pe
+        echo "✅ Copied Proxmox VE initrd: initrd.img-$(uname -r)"
     else
-        echo "❌ Error: Init script not found"
+        echo "❌ Error: Proxmox VE initrd not found"
         exit 1
-    fi
-    
-    # Verify essential binaries
-    echo "🔍 Verifying essential binaries..."
-    if [[ -f "./bin/sh" ]]; then
-        echo "✅ Shell binary found"
-    else
-        echo "⚠️  Warning: Shell binary not found"
     fi
 
     chmod +x ./init
@@ -539,14 +406,14 @@ INIT_EOF
 configure_grub_builtin_pe() {
     echo "🔄 Configuring GRUB for built-in PE boot..."
     
-    # Create simple GRUB entry without init parameter
+    # Create simple GRUB entry with init parameter
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
 # Built-in PE Boot entry for LVM extension (Embedded Script)
 menuentry "PE Boot - LVM Extension (Embedded)" {
     search --file --set=root /boot/initrd_pe
-    linux /boot/vmlinuz_pe quiet
+    linux /boot/vmlinuz_pe init=/boot/pe/auto-lvm-extend.sh quiet
     initrd /boot/initrd_pe
 }
 EOF
@@ -611,7 +478,7 @@ provide_automatic_boot_info() {
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
     echo "4. Try these commands:"
     echo "   - search --file --set=root /boot/initrd_pe"
-    echo "   - linux /boot/vmlinuz_pe quiet"
+    echo "   - linux /boot/vmlinuz_pe init=/boot/pe/auto-lvm-extend.sh quiet"
     echo "   - initrd /boot/initrd_pe"
     echo "5. Press Ctrl+X to boot"
     echo ""
