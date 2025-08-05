@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005800"
+echo "V 250806005900"
 echo "=============================="
 
 # Check root privileges
@@ -457,6 +457,11 @@ fi
 
 echo "✅ Physical volume: $PV_DEVICE"
 
+# Show current LVM status before operations
+echo "📊 Current LVM status before operations:"
+lvs --units g 2>/dev/null || echo "lvs not available"
+echo ""
+
 # Resize physical volume
 echo "🔄 Resizing physical volume..."
 if pvresize "$PV_DEVICE" 2>/dev/null; then
@@ -468,12 +473,33 @@ else
     reboot
 fi
 
-# Extend root logical volume
+# Show available space
+echo "📊 Available space after PV resize:"
+vgs --units g 2>/dev/null || echo "vgs not available"
+echo ""
+
+# Extend root logical volume (use specific size instead of 100%FREE)
 echo "🔄 Extending root logical volume..."
-if lvextend -l +100%FREE /dev/pve/root 2>/dev/null; then
-    echo "✅ Root logical volume extended successfully"
+# Calculate available space for root (leave some for thin pool)
+AVAILABLE_SPACE=$(vgs --noheadings --units g --nosuffix -o vg_free pve 2>/dev/null | tr -d ' ')
+if [[ -n "$AVAILABLE_SPACE" ]] && [[ "$AVAILABLE_SPACE" -gt 0 ]]; then
+    # Reserve 50G for thin pool, rest for root
+    ROOT_EXTEND_SIZE=$((AVAILABLE_SPACE - 50))
+    if [[ "$ROOT_EXTEND_SIZE" -lt 10 ]]; then
+        ROOT_EXTEND_SIZE=10  # Minimum 10G for root
+    fi
+    echo "📏 Extending root by ${ROOT_EXTEND_SIZE}G"
+    
+    if lvextend -L +${ROOT_EXTEND_SIZE}G /dev/pve/root 2>/dev/null; then
+        echo "✅ Root logical volume extended successfully"
+    else
+        echo "❌ Error: Failed to extend root logical volume"
+        echo "🔄 Rebooting in 10 seconds..."
+        sleep 10
+        reboot
+    fi
 else
-    echo "❌ Error: Failed to extend root logical volume"
+    echo "❌ Error: Cannot determine available space"
     echo "🔄 Rebooting in 10 seconds..."
     sleep 10
     reboot
@@ -488,6 +514,30 @@ else
     echo "🔄 Rebooting in 10 seconds..."
     sleep 10
     reboot
+fi
+
+# Recreate thin pool if it doesn't exist
+echo "🔄 Checking thin pool status..."
+if ! lvs /dev/pve/data >/dev/null 2>&1; then
+    echo "📦 Thin pool not found, recreating..."
+    
+    # Calculate space for thin pool
+    THIN_POOL_SIZE=$(vgs --noheadings --units g --nosuffix -o vg_free pve 2>/dev/null | tr -d ' ')
+    if [[ -n "$THIN_POOL_SIZE" ]] && [[ "$THIN_POOL_SIZE" -gt 10 ]]; then
+        # Use 80% of available space for thin pool
+        THIN_POOL_SIZE=$((THIN_POOL_SIZE * 80 / 100))
+        echo "📏 Creating thin pool with ${THIN_POOL_SIZE}G"
+        
+        if lvcreate -L ${THIN_POOL_SIZE}G -T pve/data 2>/dev/null; then
+            echo "✅ Thin pool created successfully"
+        else
+            echo "⚠️  Warning: Failed to create thin pool"
+        fi
+    else
+        echo "⚠️  Warning: Not enough space for thin pool"
+    fi
+else
+    echo "✅ Thin pool already exists"
 fi
 
 echo "📊 Final system status:"
