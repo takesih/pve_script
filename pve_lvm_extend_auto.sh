@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003000"
+echo "V 250806003100"
 echo "=============================="
 
 # Check root privileges
@@ -742,14 +742,14 @@ EOF
 }
             
             mkfs.ext4 /dev/pve/data
-            log_message "LVM-thin data volume created successfully"
+            echo "✅ LVM-thin data volume created successfully"
         else
-            log_message "Data volume already exists, extending..."
+            echo "✅ Data volume already exists, extending..."
             lvextend -l +100%FREE /dev/pve/data
             resize2fs /dev/pve/data
         fi
     elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
-        log_message "Creating regular LVM data volume..."
+        echo "🔄 Creating regular LVM data volume..."
         
         if ! lvs /dev/pve/data >/dev/null 2>&1; then
             local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
@@ -757,16 +757,16 @@ EOF
             echo "Creating data volume with 50G size..."
             lvcreate -L 50G -n data pve
             mkfs.ext4 /dev/pve/data
-            log_message "Regular LVM data volume created successfully"
+            echo "✅ Regular LVM data volume created successfully"
         else
-            log_message "Data volume already exists, extending..."
+            echo "✅ Data volume already exists, extending..."
             lvextend -l +100%FREE /dev/pve/data
             resize2fs /dev/pve/data
         fi
     fi
 fi
 
-log_message "LVM extension operations completed successfully!"
+echo "✅ LVM extension operations completed successfully!"
 
 # Show final status
 echo ""
