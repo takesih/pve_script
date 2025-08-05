@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005600"
+echo "V 250806005700"
 echo "=============================="
 
 # Check root privileges
@@ -382,7 +382,7 @@ EOF
     
     # Create working directory
     WORKDIR="/tmp/initrd-minimal"
-    mkdir -p "$WORKDIR"/{bin,sbin,etc,proc,sys,dev,usr/bin,usr/sbin}
+    mkdir -p "$WORKDIR"/{bin,sbin,etc,proc,dev,usr/bin,usr/sbin}
     
     # Copy busybox
     if [[ -f "/bin/busybox" ]]; then
@@ -506,10 +506,10 @@ INIT_EOF
 
     chmod +x "$WORKDIR/init"
     
-    # Create initrd
+    # Create initrd (exclude problematic directories)
     echo "📦 Creating minimal initrd..."
     cd "$WORKDIR"
-    find . | cpio -o -H newc | gzip > /boot/initrd_pe
+    find . -type f -o -type d | grep -v "^\.$" | cpio -o -H newc 2>/dev/null | gzip > /boot/initrd_pe
     
     # Cleanup
     cd /
