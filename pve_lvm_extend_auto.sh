@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004400"
+echo "V 250806004500"
 echo "=============================="
 
 # Check root privileges
@@ -348,11 +348,11 @@ prepare_linux_pe() {
     # Download SystemRescueCD with parallel download for speed
     echo "📥 Downloading SystemRescueCD with parallel download..."
     
-    # Define multiple mirrors for reliability
+    # Define multiple mirrors for reliability (GParted Live)
     local mirrors=(
-        "https://downloads.sourceforge.net/systemrescuecd/sysresccd-x86-11.00.iso"
-        "https://sourceforge.net/projects/systemrescuecd/files/sysresccd-x86-11.00.iso"
-        "https://osdn.net/projects/systemrescuecd/downloads/11.00/sysresccd-x86-11.00.iso"
+        "https://downloads.sourceforge.net/gparted/gparted-live-1.5.0-6-amd64.iso"
+        "https://sourceforge.net/projects/gparted/files/gparted-live-stable/1.5.0-6/gparted-live-1.5.0-6-amd64.iso"
+        "https://downloads.sourceforge.net/gparted/gparted-live-1.4.0-6-amd64.iso"
     )
     
     local download_success=false
@@ -379,7 +379,7 @@ prepare_linux_pe() {
     done
     
     if [[ "$download_success" == "false" ]]; then
-        echo "❌ Error: Failed to download SystemRescueCD from all mirrors"
+        echo "❌ Error: Failed to download GParted Live from all mirrors"
         exit 1
     fi
     
@@ -392,7 +392,7 @@ prepare_linux_pe() {
         umount /mnt 2>/dev/null || true
     fi
     
-    mount -o loop /tmp/sysresccd.iso /mnt
+    mount -o loop /tmp/gparted.iso /mnt
     
     # Copy kernel and initrd with verification
     echo "🔧 Copying kernel and initrd..."
@@ -403,31 +403,28 @@ prepare_linux_pe() {
     
     # Check available initrd files
     echo "Available initrd files:"
-    ls -la /mnt/boot/sysresccd* 2>/dev/null || echo "No sysresccd files found"
+    ls -la /mnt/live/vmlinuz* 2>/dev/null || echo "No vmlinuz files found"
     
-    # Copy kernel (SystemRescueCD uses standard names)
-    if [[ -f "/mnt/boot/vmlinuz" ]]; then
-        cp /mnt/boot/vmlinuz /boot/vmlinuz_pe
+    # Copy kernel (GParted Live uses live/vmlinuz)
+    if [[ -f "/mnt/live/vmlinuz" ]]; then
+        cp /mnt/live/vmlinuz /boot/vmlinuz_pe
         echo "✅ Copied vmlinuz"
     else
         echo "❌ Error: No kernel file found"
         exit 1
     fi
     
-    # Copy initrd (SystemRescueCD uses sysresccd.img)
-    if [[ -f "/mnt/boot/sysresccd.img" ]]; then
-        cp /mnt/boot/sysresccd.img /boot/initrd_pe
-        echo "✅ Copied sysresccd.img"
-    elif [[ -f "/mnt/boot/initram.igz" ]]; then
-        cp /mnt/boot/initram.igz /boot/initrd_pe
-        echo "✅ Copied initram.igz"
+    # Copy initrd (GParted Live uses live/initrd.img)
+    if [[ -f "/mnt/live/initrd.img" ]]; then
+        cp /mnt/live/initrd.img /boot/initrd_pe
+        echo "✅ Copied initrd.img"
     else
         echo "❌ Error: No initrd file found"
         exit 1
     fi
     
-    # SystemRescueCD already has all LVM tools, no need to modify initrd
-    echo "🔧 SystemRescueCD initrd is ready (contains all LVM tools)"
+    # GParted Live already has all LVM tools, no need to modify initrd
+    echo "🔧 GParted Live initrd is ready (contains all LVM tools)"
     
     # Create PE script directory and copy PE script
     mkdir -p /boot/pe
@@ -438,7 +435,7 @@ prepare_linux_pe() {
         # Create basic PE script
         cat > /boot/pe/auto-lvm-extend.sh << 'PE_EOF'
 #!/bin/sh
-echo "🚀 Starting automatic LVM extension in SystemRescueCD environment..."
+echo "🚀 Starting automatic LVM extension in GParted Live environment..."
 sleep 5
 echo "📊 Current system status:"
 df -h
@@ -461,7 +458,7 @@ PE_EOF
     # Cleanup
     umount /mnt
     
-    echo "✅ SystemRescueCD PE prepared successfully (Size: ~700MB)"
+    echo "✅ GParted Live PE prepared successfully (Size: ~300MB)"
     
     # Verify PE environment
     echo "🔍 Verifying PE environment..."
@@ -999,7 +996,7 @@ generate_grub_config() {
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
-# PE Boot entry for LVM extension (SystemRescueCD)
+# PE Boot entry for LVM extension (GParted Live)
 menuentry "PE Boot - LVM Extension" {
     set root=(hd0,1)
     linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
@@ -1066,8 +1063,8 @@ exec tail -n +3 \$0
 # PE Boot entry for LVM extension (Backup)
 menuentry "PE Boot - LVM Extension (Backup)" {
     set root=(hd0,1)
-    linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd_pe
 }
 EOF
 
