@@ -4,7 +4,6 @@
 # Script to extend LVM volumes after disk expansion with automatic PE boot
 # Designed for remote systems without user intervention
 # Based on Proxmox forum: https://forum.proxmox.com/threads/extend-local-lvm-proxmox.133478/#post-589215
-# Version: 2025-08-05 235000
 # Author: Proxmox LVM Management Tool
 
 set -e
@@ -12,6 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
+echo "Version: 250806000032"
 echo "=============================="
 
 # Check root privileges
