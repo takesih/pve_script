@@ -54,8 +54,35 @@ check_required_packages() {
     
     if [ ${#missing_packages[@]} -gt 0 ]; then
         echo "📦 Installing missing packages: ${missing_packages[*]}"
+        
+        # Temporarily disable problematic repositories to avoid 401 errors
+        echo "🔄 Temporarily disabling enterprise repositories to avoid authentication errors..."
+        
+        # Backup current sources
+        cp /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sources.list.d/pve-enterprise.list.backup 2>/dev/null || true
+        cp /etc/apt/sources.list.d/ceph.list /etc/apt/sources.list.d/ceph.list.backup 2>/dev/null || true
+        
+        # Disable enterprise repositories temporarily
+        if [[ -f "/etc/apt/sources.list.d/pve-enterprise.list" ]]; then
+            mv /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sources.list.d/pve-enterprise.list.disabled
+        fi
+        if [[ -f "/etc/apt/sources.list.d/ceph.list" ]]; then
+            mv /etc/apt/sources.list.d/ceph.list /etc/apt/sources.list.d/ceph.list.disabled
+        fi
+        
+        # Update and install packages
         apt-get update
         apt-get install -y "${missing_packages[@]}"
+        
+        # Restore enterprise repositories
+        echo "🔄 Restoring enterprise repositories..."
+        if [[ -f "/etc/apt/sources.list.d/pve-enterprise.list.disabled" ]]; then
+            mv /etc/apt/sources.list.d/pve-enterprise.list.disabled /etc/apt/sources.list.d/pve-enterprise.list
+        fi
+        if [[ -f "/etc/apt/sources.list.d/ceph.list.disabled" ]]; then
+            mv /etc/apt/sources.list.d/ceph.list.disabled /etc/apt/sources.list.d/ceph.list
+        fi
+        
         echo "✅ Required packages installed successfully"
     else
         echo "✅ All required packages are already installed"
