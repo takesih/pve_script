@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806002440"
+echo "V 250806003000"
 echo "=============================="
 
 # Check root privileges
@@ -585,6 +585,16 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         fi
         
         echo "📏 Formatting thin volume..."
+        
+        # Check if volume is mounted and unmount if necessary
+        if mountpoint -q /mnt/pve/data; then
+            echo "⚠️  Volume is mounted, unmounting first..."
+            umount /mnt/pve/data
+        fi
+        
+        # Remove from fstab if exists
+        sed -i '/\/dev\/pve\/data/d' /etc/fstab
+        
         if mkfs.ext4 /dev/pve/data; then
             echo "✅ Thin volume formatted successfully"
         else
@@ -600,6 +610,33 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         echo "✅ LVM-thin data volume created successfully"
     else
         echo "✅ Data volume already exists"
+        
+        # Check if it needs filesystem
+        if ! blkid /dev/pve/data | grep -q "ext4"; then
+            echo "📏 Formatting existing data volume..."
+            
+            # Check if volume is mounted and unmount if necessary
+            if mountpoint -q /mnt/pve/data; then
+                echo "⚠️  Volume is mounted, unmounting first..."
+                umount /mnt/pve/data
+            fi
+            
+            # Remove from fstab if exists
+            sed -i '/\/dev\/pve\/data/d' /etc/fstab
+            
+            if mkfs.ext4 /dev/pve/data; then
+                echo "✅ Data volume formatted successfully"
+            else
+                echo "❌ Data volume formatting failed"
+                exit 1
+            fi
+            
+            mkdir -p /mnt/pve/data
+            echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+            mount /dev/pve/data /mnt/pve/data
+        else
+            echo "✅ Data volume already has filesystem"
+        fi
     fi
 elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
     echo "🔄 Creating regular LVM data volume..."
@@ -637,6 +674,15 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
             fi
         fi
         
+        # Check if volume is mounted and unmount if necessary
+        if mountpoint -q /mnt/pve/data; then
+            echo "⚠️  Volume is mounted, unmounting first..."
+            umount /mnt/pve/data
+        fi
+        
+        # Remove from fstab if exists
+        sed -i '/\/dev\/pve\/data/d' /etc/fstab
+        
         if mkfs.ext4 /dev/pve/data; then
             echo "✅ Data volume formatted successfully"
         else
@@ -651,6 +697,33 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
         echo "✅ Regular LVM data volume created successfully"
     else
         echo "✅ Data volume already exists"
+        
+        # Check if it needs filesystem
+        if ! blkid /dev/pve/data | grep -q "ext4"; then
+            echo "📏 Formatting existing data volume..."
+            
+            # Check if volume is mounted and unmount if necessary
+            if mountpoint -q /mnt/pve/data; then
+                echo "⚠️  Volume is mounted, unmounting first..."
+                umount /mnt/pve/data
+            fi
+            
+            # Remove from fstab if exists
+            sed -i '/\/dev\/pve\/data/d' /etc/fstab
+            
+            if mkfs.ext4 /dev/pve/data; then
+                echo "✅ Data volume formatted successfully"
+            else
+                echo "❌ Data volume formatting failed"
+                exit 1
+            fi
+            
+            mkdir -p /mnt/pve/data
+            echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+            mount /dev/pve/data /mnt/pve/data
+        else
+            echo "✅ Data volume already has filesystem"
+        fi
     fi
 fi
 
