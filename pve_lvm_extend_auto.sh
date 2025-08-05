@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "Version: 250806000032"
+echo "V 250806001500"
 echo "=============================="
 
 # Check root privileges
@@ -456,18 +456,17 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
     if ! lvs /dev/pve/data &>/dev/null; then
         echo "📏 Creating thin pool..."
         
-        # Use fixed size instead of calculating
-        local pool_size=50  # Fixed 50G size
+        # Create thin pool with explicit size specification
+        echo "Creating thin pool with 50G size..."
         
-        echo "Pool size: ${pool_size}G"
-        
-        if lvcreate -L "${pool_size}G" -T pve/data; then
+        # Use explicit size without variable
+        if lvcreate -L 50G -T pve/data; then
             echo "✅ Thin pool created successfully"
         else
             echo "❌ Thin pool creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -L "25G" -T pve/data; then
+            if lvcreate -L 25G -T pve/data; then
                 echo "✅ Thin pool created with smaller size"
             else
                 echo "❌ Thin pool creation failed even with smaller size"
@@ -477,19 +476,17 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         
         echo "📏 Creating thin volume..."
         
-        # Use fixed size instead of calculating from pool size
-        local thin_volume_size=20  # Fixed 20G size
+        # Create thin volume with explicit size specification
+        echo "Creating thin volume with 20G size..."
         
-        echo "Thin volume size: ${thin_volume_size}G"
-        
-        # Create thin volume with fixed size
-        if lvcreate -V "${thin_volume_size}G" -T pve/data -n data; then
+        # Use explicit size without variable
+        if lvcreate -V 20G -T pve/data -n data; then
             echo "✅ Thin volume created successfully"
         else
             echo "❌ Thin volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -V "10G" -T pve/data -n data; then
+            if lvcreate -V 10G -T pve/data -n data; then
                 echo "✅ Thin volume created with smaller size"
             else
                 echo "❌ Thin volume creation failed even with smaller size"
@@ -518,18 +515,17 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
     echo "🔄 Creating regular LVM data volume..."
     
     if ! lvs /dev/pve/data &>/dev/null; then
-        # Use fixed size instead of calculating
-        local data_size=50  # Fixed 50G size
+        # Create regular LVM volume with explicit size specification
+        echo "Creating regular LVM volume with 50G size..."
         
-        echo "Data volume size: ${data_size}G"
-        
-        if lvcreate -L "${data_size}G" -n data pve; then
+        # Use explicit size without variable
+        if lvcreate -L 50G -n data pve; then
             echo "✅ Regular LVM volume created successfully"
         else
             echo "❌ Regular LVM volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            if lvcreate -L "25G" -n data pve; then
+            if lvcreate -L 25G -n data pve; then
                 echo "✅ Regular LVM volume created with smaller size"
             else
                 echo "❌ Regular LVM volume creation failed even with smaller size"
@@ -581,9 +577,9 @@ EOF
         
         if ! lvs /dev/pve/data >/dev/null 2>&1; then
             local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-            local data_size=50  # Fixed 50G size
-            
-            lvcreate -L "${data_size}G" -n data pve
+            # Create data volume with explicit size
+            echo "Creating data volume with 50G size..."
+            lvcreate -L 50G -n data pve
             mkfs.ext4 /dev/pve/data
             log_message "Regular LVM data volume created successfully"
         else
