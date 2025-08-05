@@ -455,24 +455,10 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
     # Check if data volume exists
     if ! lvs /dev/pve/data &>/dev/null; then
         echo "📏 Creating thin pool..."
-        local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
         
-        # Ensure free_space is a valid number
-        if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
-            echo "❌ Invalid free space: $free_space"
-            echo "🔄 Using fallback calculation..."
-            free_space=50  # Fallback to 50G
-        fi
+        # Use fixed size instead of calculating
+        local pool_size=50  # Fixed 50G size
         
-        # Calculate pool size (95% of free space)
-        local pool_size=$((free_space * 95 / 100))
-        
-        # Ensure minimum size
-        if [[ $pool_size -lt 20 ]]; then
-            pool_size=20
-        fi
-        
-        echo "Free space: ${free_space}G"
         echo "Pool size: ${pool_size}G"
         
         if lvcreate -L "${pool_size}G" -T pve/data; then
@@ -481,8 +467,7 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
             echo "❌ Thin pool creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            local smaller_size=$((pool_size / 2))
-            if lvcreate -L "${smaller_size}G" -T pve/data; then
+            if lvcreate -L "25G" -T pve/data; then
                 echo "✅ Thin pool created with smaller size"
             else
                 echo "❌ Thin pool creation failed even with smaller size"
@@ -491,35 +476,20 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         fi
         
         echo "📏 Creating thin volume..."
-        local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
         
-        # Ensure thin_pool_size is a valid number
-        if [[ ! "$thin_pool_size" =~ ^[0-9]+$ ]]; then
-            echo "❌ Invalid thin pool size: $thin_pool_size"
-            echo "🔄 Using fallback calculation..."
-            thin_pool_size=50  # Fallback to 50G
-        fi
+        # Use fixed size instead of calculating from pool size
+        local thin_volume_size=20  # Fixed 20G size
         
-        # Calculate thin volume size (95% of pool size)
-        local thin_volume_size=$((thin_pool_size * 95 / 100))
-        
-        # Ensure minimum size
-        if [[ $thin_volume_size -lt 10 ]]; then
-            thin_volume_size=10
-        fi
-        
-        echo "Thin pool size: ${thin_pool_size}G"
         echo "Thin volume size: ${thin_volume_size}G"
         
-        # Create thin volume with explicit size
+        # Create thin volume with fixed size
         if lvcreate -V "${thin_volume_size}G" -T pve/data -n data; then
             echo "✅ Thin volume created successfully"
         else
             echo "❌ Thin volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            local smaller_size=$((thin_volume_size / 2))
-            if lvcreate -V "${smaller_size}G" -T pve/data -n data; then
+            if lvcreate -V "10G" -T pve/data -n data; then
                 echo "✅ Thin volume created with smaller size"
             else
                 echo "❌ Thin volume creation failed even with smaller size"
@@ -548,30 +518,18 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
     echo "🔄 Creating regular LVM data volume..."
     
     if ! lvs /dev/pve/data &>/dev/null; then
-        local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+        # Use fixed size instead of calculating
+        local data_size=50  # Fixed 50G size
         
-        # Ensure free_space is a valid number
-        if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
-            echo "❌ Invalid free space: $free_space"
-            echo "🔄 Using fallback calculation..."
-            free_space=50  # Fallback to 50G
-        fi
+        echo "Data volume size: ${data_size}G"
         
-        # Ensure minimum size
-        if [[ $free_space -lt 10 ]]; then
-            free_space=10
-        fi
-        
-        echo "Free space: ${free_space}G"
-        
-        if lvcreate -L "${free_space}G" -n data pve; then
+        if lvcreate -L "${data_size}G" -n data pve; then
             echo "✅ Regular LVM volume created successfully"
         else
             echo "❌ Regular LVM volume creation failed"
             echo "🔄 Trying with smaller size..."
             # Try with smaller size
-            local smaller_size=$((free_space / 2))
-            if lvcreate -L "${smaller_size}G" -n data pve; then
+            if lvcreate -L "25G" -n data pve; then
                 echo "✅ Regular LVM volume created with smaller size"
             else
                 echo "❌ Regular LVM volume creation failed even with smaller size"
@@ -623,7 +581,7 @@ EOF
         
         if ! lvs /dev/pve/data >/dev/null 2>&1; then
             local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-            local data_size=$((free_space * 95 / 100))
+            local data_size=50  # Fixed 50G size
             
             lvcreate -L "${data_size}G" -n data pve
             mkfs.ext4 /dev/pve/data
