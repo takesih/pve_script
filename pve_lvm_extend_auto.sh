@@ -47,6 +47,11 @@ check_required_packages() {
         missing_packages+=("grub-common")
     fi
     
+    # Check for aria2c (for fast downloads)
+    if ! command -v aria2c &> /dev/null; then
+        missing_packages+=("aria2")
+    fi
+    
     if [ ${#missing_packages[@]} -gt 0 ]; then
         echo "📦 Installing missing packages: ${missing_packages[*]}"
         apt-get update
@@ -207,6 +212,72 @@ calculate_sizes() {
     echo "Calculated root size: $ROOT_SIZE_CALC"
 }
 
+# Function to check existing PE configuration
+check_existing_pe_config() {
+    echo "🔍 Checking existing PE configuration..."
+    
+    if [[ -f "/etc/grub.d/40_pe_lvm_extend" ]] || [[ -d "/boot/pe" ]]; then
+        echo "⚠️  Existing PE configuration detected"
+        echo ""
+        echo "Options:"
+        echo "1. Clean existing configuration and reconfigure (Recommended)"
+        echo "2. Skip PE configuration"
+        echo "3. Cancel operation"
+        echo ""
+        
+        read -p "Select option (1-3): " cleanup_option
+        
+        case $cleanup_option in
+            1)
+                echo "🔄 Cleaning existing PE configuration..."
+                cleanup_existing_pe_config
+                ;;
+            2)
+                echo "ℹ️  Skipping PE configuration"
+                return 1
+                ;;
+            3)
+                echo "❌ Operation cancelled."
+                exit 1
+                ;;
+            *)
+                echo "Invalid option. Cleaning existing configuration..."
+                cleanup_existing_pe_config
+                ;;
+        esac
+    else
+        echo "✅ No existing PE configuration found"
+    fi
+}
+
+# Function to cleanup existing PE configuration
+cleanup_existing_pe_config() {
+    echo "🔄 Cleaning existing PE configuration..."
+    
+    # Remove GRUB entry
+    if [[ -f "/etc/grub.d/40_pe_lvm_extend" ]]; then
+        rm -f /etc/grub.d/40_pe_lvm_extend
+        echo "  - Removed GRUB entry"
+    fi
+    
+    # Remove PE directory
+    if [[ -d "/boot/pe" ]]; then
+        rm -rf /boot/pe
+        echo "  - Removed PE directory"
+    fi
+    
+    # Remove temporary files
+    if [[ -f "/tmp/tinycore.iso" ]]; then
+        rm -f /tmp/tinycore.iso
+        echo "  - Removed temporary ISO"
+    fi
+    
+    # Update GRUB
+    update-grub
+    
+    echo "✅ Existing PE configuration cleaned"
+}
+
 # Function to download and prepare Linux PE
 prepare_linux_pe() {
     echo "🔄 Preparing Tiny Core Linux PE for automatic boot..."
@@ -214,9 +285,17 @@ prepare_linux_pe() {
     # Create PE directory
     mkdir -p /boot/pe
     
-    # Download Tiny Core Linux (smallest available - ~16MB)
-    echo "📥 Downloading Tiny Core Linux..."
-    wget -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+    # Download Tiny Core Linux with parallel download for speed
+    echo "📥 Downloading Tiny Core Linux with parallel download..."
+    
+    # Use aria2c if available, otherwise use wget with resume
+    if command -v aria2c &> /dev/null; then
+        echo "Using aria2c for fast parallel download..."
+        aria2c -x 16 -s 16 -o tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso" -d /tmp/
+    else
+        echo "Using wget with resume capability..."
+        wget -c -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+    fi
     
     # Mount ISO and extract kernel and initrd
     echo "🔧 Extracting PE components..."
@@ -464,36 +543,35 @@ detect_system_config() {
 generate_grub_config() {
     echo "🔄 Generating GRUB configuration..."
     
+    # Get current boot device information
+    local boot_device=$(df /boot | awk 'NR==2 {print $1}')
+    local boot_disk=$(echo "$boot_device" | sed 's/[0-9]*$//')
+    local boot_partition=$(echo "$boot_device" | sed 's/.*\([0-9]*\)$/\1/')
+    
+    echo "Boot device: $boot_device"
+    echo "Boot disk: $boot_disk"
+    echo "Boot partition: $boot_partition"
+    
     # Determine GRUB root specification based on system configuration
     local grub_root=""
     
     if [[ "$PARTITION_TABLE" == "gpt" ]]; then
-        if [[ "$FILESYSTEM_TYPE" == "ext4" ]]; then
-            grub_root="(hd0,gpt1)"
-        elif [[ "$FILESYSTEM_TYPE" == "xfs" ]]; then
-            grub_root="(hd0,gpt1)"
-        else
-            grub_root="(hd0,gpt1)"
-        fi
+        grub_root="(hd0,gpt1)"
     else
-        # MBR partition table
-        if [[ "$FILESYSTEM_TYPE" == "ext4" ]]; then
-            grub_root="(hd0,1)"
-        elif [[ "$FILESYSTEM_TYPE" == "xfs" ]]; then
-            grub_root="(hd0,1)"
-        else
-            grub_root="(hd0,1)"
-        fi
+        grub_root="(hd0,1)"
     fi
     
     echo "Using GRUB root: $grub_root"
     
-    # Create GRUB entry for PE boot
+    # Create GRUB entry for PE boot with more robust configuration
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
+    insmod ext2
+    insmod part_gpt
+    insmod part_msdos
     set root=$grub_root
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
@@ -512,6 +590,7 @@ EOF
     echo "  Root specification: $grub_root"
     echo "  Partition table: $PARTITION_TABLE"
     echo "  Filesystem: $FILESYSTEM_TYPE"
+    echo "  Boot device: $boot_device"
 }
 
 # Function to provide automatic boot instructions
@@ -594,17 +673,22 @@ if [[ "$final_confirm" != "y" && "$final_confirm" != "Y" ]]; then
     exit 1
 fi
 
-# Prepare Linux PE
-prepare_linux_pe
-
-# Create automatic PE boot script
-create_pe_boot_script
-
-# Detect system configuration
-detect_system_config
-
-# Configure GRUB for automatic PE boot
-generate_grub_config
+# Check existing PE configuration
+if check_existing_pe_config; then
+    # Prepare Linux PE
+    prepare_linux_pe
+    
+    # Create automatic PE boot script
+    create_pe_boot_script
+    
+    # Detect system configuration
+    detect_system_config
+    
+    # Configure GRUB for automatic PE boot
+    generate_grub_config
+else
+    echo "ℹ️  PE configuration skipped"
+fi
 
 # Provide automatic boot information
 provide_automatic_boot_info
