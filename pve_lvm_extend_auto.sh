@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003100"
+echo "V 250806003200"
 echo "=============================="
 
 # Check root privileges
@@ -740,47 +740,6 @@ EOF
     chmod +x /boot/pe/auto-lvm-extend.sh
     echo "✅ PE boot script created successfully"
 }
-            
-            mkfs.ext4 /dev/pve/data
-            echo "✅ LVM-thin data volume created successfully"
-        else
-            echo "✅ Data volume already exists, extending..."
-            lvextend -l +100%FREE /dev/pve/data
-            resize2fs /dev/pve/data
-        fi
-    elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
-        echo "🔄 Creating regular LVM data volume..."
-        
-        if ! lvs /dev/pve/data >/dev/null 2>&1; then
-            local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-            # Create data volume with explicit size
-            echo "Creating data volume with 50G size..."
-            lvcreate -L 50G -n data pve
-            mkfs.ext4 /dev/pve/data
-            echo "✅ Regular LVM data volume created successfully"
-        else
-            echo "✅ Data volume already exists, extending..."
-            lvextend -l +100%FREE /dev/pve/data
-            resize2fs /dev/pve/data
-        fi
-    fi
-fi
-
-echo "✅ LVM extension operations completed successfully!"
-
-# Show final status
-echo ""
-echo "Final LVM status:"
-lvs --units g
-
-echo ""
-echo "✅ Automatic PE operations completed!"
-echo "Rebooting to Proxmox VE in 10 seconds..."
-
-# Wait and reboot to PVE
-sleep 10
-reboot
-EOF
 
     chmod +x /boot/pe/auto-lvm-extend.sh
     
