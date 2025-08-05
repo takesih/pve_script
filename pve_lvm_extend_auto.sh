@@ -391,97 +391,151 @@ create_pe_boot_script() {
     echo "🔄 Creating automatic PE boot script..."
     
     cat > /boot/pe/auto-lvm-extend.sh << 'EOF'
-#!/bin/bash
+#!/bin/sh
 
-# Automatic LVM Extension PE Script
-# Runs automatically during PE boot
+# Auto LVM Extension Script for PE Boot
+echo "🚀 Starting automatic LVM extension in PE environment..."
 
-set -e
+# Wait for system to be ready
+sleep 10
 
-echo "=============================="
-echo "Automatic LVM Extension - PE Boot"
-echo "=============================="
+# Load configuration from saved file
+if [[ -f "/boot/pe/lvm_config.txt" ]]; then
+    source /boot/pe/lvm_config.txt
+    echo "✅ Configuration loaded"
+else
+    echo "❌ Configuration file not found"
+    echo "🔄 Attempting to continue with default settings..."
+    
+    # Set default values
+    ROOT_SIZE_CALC="15G"
+    DATA_VOLUME_TYPE="thin"
+fi
 
-# Configuration file
-CONFIG_FILE="/boot/pe/lvm-config.conf"
+# Show current system status
+echo "📊 Current system status:"
+df -h
+echo ""
+lvs --units g
+echo ""
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "❌ Error: Configuration file not found"
+# Perform LVM operations
+echo "🔄 Performing LVM extension operations..."
+
+# Resize physical volume
+echo "📏 Resizing physical volume..."
+if pvresize /dev/nvme0n1p3; then
+    echo "✅ Physical volume resized successfully"
+else
+    echo "⚠️  Physical volume resize failed, continuing..."
+fi
+
+# Extend root volume
+echo "📏 Extending root volume to $ROOT_SIZE_CALC..."
+if lvextend -L "$ROOT_SIZE_CALC" /dev/pve/root; then
+    echo "✅ Root volume extended successfully"
+else
+    echo "❌ Root volume extension failed"
     exit 1
 fi
 
-# Load configuration
-source "$CONFIG_FILE"
-
-echo "Configuration loaded:"
-echo "  Root size: $ROOT_SIZE_CALC"
-echo "  Data volume type: $DATA_VOLUME_TYPE"
-echo "  Fix structure: $FIX_STRUCTURE"
-echo ""
-
-# Function to log operations
-log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a /var/log/auto-lvm-extend.log
-}
-
-log_message "Starting automatic LVM extension operations..."
-
-# Activate LVM
-log_message "Activating LVM..."
-vgchange -ay pve
-
-# Resize physical volume
-log_message "Resizing Physical Volume..."
-pvresize /dev/nvme0n1p3
-
-# Extend root volume
-log_message "Extending root volume to $ROOT_SIZE_CALC..."
-lvextend -L "$ROOT_SIZE_CALC" /dev/pve/root
-resize2fs /dev/pve/root
+# Resize filesystem
+echo "📏 Resizing filesystem..."
+if resize2fs /dev/pve/root; then
+    echo "✅ Filesystem resized successfully"
+else
+    echo "❌ Filesystem resize failed"
+    exit 1
+fi
 
 # Handle data volume
-if [[ "$DATA_VOLUME_TYPE" != "skip" ]]; then
-    if [[ "$FIX_STRUCTURE" == "yes" ]]; then
-        log_message "Fixing data volume structure..."
-        
-        # Remove existing data volume if it exists
-        if lvs /dev/pve/data >/dev/null 2>&1; then
-            lvremove -f /dev/pve/data
-        fi
-        
-        # Create thin pool
+if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
+    echo "🔄 Creating LVM-thin data volume..."
+    
+    # Check if data volume exists
+    if ! lvs /dev/pve/data &>/dev/null; then
+        echo "📏 Creating thin pool..."
         local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
         local pool_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
         
-        log_message "Creating thin pool with ${pool_size}G..."
-        lvcreate -L "${pool_size}G" -T pve/data
+        if lvcreate -L "${pool_size}G" -T pve/data; then
+            echo "✅ Thin pool created successfully"
+        else
+            echo "❌ Thin pool creation failed"
+            exit 1
+        fi
         
-        # Create thin volume
+        echo "📏 Creating thin volume..."
         local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
         local thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
         
-        log_message "Creating thin volume with ${thin_volume_size}G..."
-        lvcreate -V "${thin_volume_size}G" -T pve/data -n data
+        if lvcreate -V "${thin_volume_size}G" -T pve/data -n data; then
+            echo "✅ Thin volume created successfully"
+        else
+            echo "❌ Thin volume creation failed"
+            exit 1
+        fi
         
-        # Create filesystem
-        mkfs.ext4 /dev/pve/data
+        echo "📏 Formatting thin volume..."
+        if mkfs.ext4 /dev/pve/data; then
+            echo "✅ Thin volume formatted successfully"
+        else
+            echo "❌ Thin volume formatting failed"
+            exit 1
+        fi
         
-        log_message "Data volume structure fixed successfully"
-    elif [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
-        log_message "Creating LVM-thin data volume..."
+        echo "📏 Mounting thin volume..."
+        mkdir -p /mnt/pve/data
+        echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+        mount /dev/pve/data /mnt/pve/data
         
-        # Check if data volume exists
-        if ! lvs /dev/pve/data >/dev/null 2>&1; then
-            local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
-            local pool_size=$(echo "scale=0; $free_space * 95 / 100" | bc)
-            
-            log_message "Creating thin pool with ${pool_size}G..."
-            lvcreate -L "${pool_size}G" -T pve/data
-            
-            local thin_pool_size=$(lvs --noheadings --units g --nosuffix -o lv_size /dev/pve/data | tr -d ' ')
-            local thin_volume_size=$(echo "scale=0; $thin_pool_size * 95 / 100" | bc)
-            
-            log_message "Creating thin volume with ${thin_volume_size}G..."
+        echo "✅ LVM-thin data volume created successfully"
+    else
+        echo "✅ Data volume already exists"
+    fi
+elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
+    echo "🔄 Creating regular LVM data volume..."
+    
+    if ! lvs /dev/pve/data &>/dev/null; then
+        local free_space=$(vgs --noheadings --units g --nosuffix -o vg_free pve | tr -d ' ')
+        
+        if lvcreate -L "${free_space}G" -n data pve; then
+            echo "✅ Regular LVM volume created successfully"
+        else
+            echo "❌ Regular LVM volume creation failed"
+            exit 1
+        fi
+        
+        if mkfs.ext4 /dev/pve/data; then
+            echo "✅ Data volume formatted successfully"
+        else
+            echo "❌ Data volume formatting failed"
+            exit 1
+        fi
+        
+        mkdir -p /mnt/pve/data
+        echo "/dev/pve/data /mnt/pve/data ext4 defaults 0 2" >> /etc/fstab
+        mount /dev/pve/data /mnt/pve/data
+        
+        echo "✅ Regular LVM data volume created successfully"
+    else
+        echo "✅ Data volume already exists"
+    fi
+fi
+
+echo "✅ LVM extension completed successfully"
+echo "🔄 Rebooting back to Proxmox VE..."
+
+# Wait a moment before reboot
+sleep 5
+
+# Reboot to Proxmox VE
+reboot
+EOF
+
+    chmod +x /boot/pe/auto-lvm-extend.sh
+    echo "✅ PE boot script created successfully"
+}
             lvcreate -V "${thin_volume_size}G" -T pve/data -n data
             
             mkfs.ext4 /dev/pve/data
@@ -528,7 +582,7 @@ EOF
     chmod +x /boot/pe/auto-lvm-extend.sh
     
     # Create configuration file
-    cat > /boot/pe/lvm-config.conf << EOF
+    cat > /boot/pe/lvm_config.txt << EOF
 ROOT_SIZE_CALC="$ROOT_SIZE_CALC"
 DATA_VOLUME_TYPE="$DATA_VOLUME_TYPE"
 FIX_STRUCTURE="$FIX_STRUCTURE"
@@ -579,13 +633,29 @@ generate_grub_config() {
     echo "Boot disk: $boot_disk"
     echo "Boot partition: $boot_partition"
     
-    # Determine GRUB root specification based on system configuration
+    # Detect actual GRUB device mapping
+    local grub_device=""
     local grub_root=""
     
+    # Try to detect the actual GRUB device
+    if [[ -f "/boot/grub/device.map" ]]; then
+        grub_device=$(cat /boot/grub/device.map | grep "$boot_disk" | awk '{print $1}')
+        echo "GRUB device map: $grub_device"
+    fi
+    
+    # Determine GRUB root specification based on system configuration
     if [[ "$PARTITION_TABLE" == "gpt" ]]; then
-        grub_root="(hd0,gpt1)"
+        if [[ -n "$grub_device" ]]; then
+            grub_root="${grub_device},gpt1"
+        else
+            grub_root="(hd0,gpt1)"
+        fi
     else
-        grub_root="(hd0,1)"
+        if [[ -n "$grub_device" ]]; then
+            grub_root="${grub_device},1"
+        else
+            grub_root="(hd0,1)"
+        fi
     fi
     
     echo "Using GRUB root: $grub_root"
@@ -597,8 +667,10 @@ exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
     insmod ext2
+    insmod ext4
     insmod part_gpt
     insmod part_msdos
+    insmod lvm
     set root=$grub_root
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
@@ -618,6 +690,12 @@ EOF
     echo "  Partition table: $PARTITION_TABLE"
     echo "  Filesystem: $FILESYSTEM_TYPE"
     echo "  Boot device: $boot_device"
+    echo "  GRUB device: $grub_device"
+    
+    # Show current GRUB configuration for debugging
+    echo ""
+    echo "🔍 Current GRUB configuration:"
+    grep -A 10 -B 5 "PE Boot" /boot/grub/grub.cfg 2>/dev/null || echo "GRUB config not found"
 }
 
 # Function to provide automatic boot instructions
@@ -635,7 +713,7 @@ provide_automatic_boot_info() {
     echo ""
     echo "📁 Files created:"
     echo "  - PE Script: /boot/pe/auto-lvm-extend.sh"
-    echo "  - Config: /boot/pe/lvm-config.conf"
+    echo "  - Config: /boot/pe/lvm_config.txt"
     echo "  - GRUB Entry: /etc/grub.d/40_pe_lvm_extend"
     echo ""
     echo "🔄 Next steps:"
