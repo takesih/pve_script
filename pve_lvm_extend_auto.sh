@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003300"
+echo "V 250806003400"
 echo "=============================="
 
 # Check root privileges
@@ -351,10 +351,10 @@ prepare_linux_pe() {
     # Use aria2c if available, otherwise use wget with resume
     if command -v aria2c &> /dev/null; then
         echo "Using aria2c for fast parallel download..."
-        aria2c -x 16 -s 16 -o tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso" -d /tmp/
+        aria2c -x 16 -s 16 -o tinycore.iso "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.isoTinyCorePure64-12.0.iso" -d /tmp/
     else
         echo "Using wget with resume capability..."
-        wget -c -O /tmp/tinycore.iso "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+        wget -c -O /tmp/tinycore.iso "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
     fi
     
     # Mount ISO and extract kernel and initrd
@@ -818,12 +818,34 @@ generate_grub_config() {
     
     echo "Using GRUB root: $grub_root"
     
-    # Create GRUB entry for PE boot with more robust configuration
+    # Detect if system is UEFI or BIOS
+    local is_uefi=false
+    if [[ -d "/sys/firmware/efi" ]]; then
+        is_uefi=true
+        echo "Detected UEFI system"
+    else
+        echo "Detected BIOS system"
+    fi
+    
+    # Create GRUB entry for PE boot with appropriate configuration
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
+EOF
+
+    # Add appropriate modules based on system type
+    if [[ "$is_uefi" == "true" ]]; then
+        cat >> /etc/grub.d/40_pe_lvm_extend << EOF
+    insmod efi_gop
+    insmod efi_uga
+    insmod video_bochs
+    insmod video_cirrus
+EOF
+    fi
+    
+    cat >> /etc/grub.d/40_pe_lvm_extend << EOF
     insmod ext2
     insmod ext4
     insmod part_gpt
@@ -837,11 +859,21 @@ EOF
 
     chmod +x /etc/grub.d/40_pe_lvm_extend
     
-    # Update GRUB
-    update-grub
+    # Update GRUB with error handling
+    echo "🔄 Updating GRUB configuration..."
+    if update-grub; then
+        echo "✅ GRUB configuration updated successfully"
+    else
+        echo "⚠️  GRUB update failed, but continuing..."
+    fi
     
-    # Set PE boot as default for next boot
-    grub-reboot "PE Boot - LVM Extension"
+    # Set PE boot as default for next boot with error handling
+    echo "🔄 Setting PE boot as default..."
+    if grub-reboot "PE Boot - LVM Extension"; then
+        echo "✅ PE boot set as default"
+    else
+        echo "⚠️  Failed to set PE boot as default, but continuing..."
+    fi
     
     echo "✅ GRUB configured for automatic PE boot"
     echo "  Root specification: $grub_root"
@@ -887,6 +919,15 @@ provide_automatic_boot_info() {
     echo ""
     echo "🔄 Rebooting to PE environment in 30 seconds..."
     echo "Press Ctrl+C to cancel"
+    echo ""
+    echo "📋 Manual boot instructions (if automatic boot fails):"
+    echo "1. Reboot the system"
+    echo "2. In GRUB menu, select 'PE Boot - LVM Extension'"
+    echo "3. If menu doesn't appear, press 'e' to edit boot entry"
+    echo "4. Add: linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "5. Add: initrd /pe/initrd-custom"
+    echo "6. Press Ctrl+X to boot"
+    echo ""
     
     # Countdown
     for i in {30..1}; do
