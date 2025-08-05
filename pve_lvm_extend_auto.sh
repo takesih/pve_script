@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004500"
+echo "V 250806004600"
 echo "=============================="
 
 # Check root privileges
@@ -327,8 +327,8 @@ cleanup_existing_pe_config() {
     fi
     
     # Remove temporary files
-    if [[ -f "/tmp/tinycore.iso" ]]; then
-        rm -f /tmp/tinycore.iso
+    if [[ -f "/tmp/gparted.iso" ]]; then
+        rm -f /tmp/gparted.iso
         echo "  - Removed temporary ISO"
     fi
     
@@ -363,13 +363,13 @@ prepare_linux_pe() {
         
         if command -v aria2c &> /dev/null; then
             echo "Using aria2c for fast parallel download..."
-            if aria2c -x 16 -s 16 -o tinycore.iso "$mirror" -d /tmp/; then
+            if aria2c -x 16 -s 16 -o gparted.iso "$mirror" -d /tmp/; then
                 download_success=true
                 break
             fi
         else
             echo "Using wget with resume capability..."
-            if wget -c -O /tmp/tinycore.iso "$mirror"; then
+            if wget -c -O /tmp/gparted.iso "$mirror"; then
                 download_success=true
                 break
             fi
