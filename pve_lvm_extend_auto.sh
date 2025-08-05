@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005200"
+echo "V 250806005300"
 echo "=============================="
 
 # Check root privileges
@@ -393,6 +393,14 @@ EOF
     # Copy essential binaries (if available)
     if [[ -f "/bin/busybox" ]]; then
         cp /bin/busybox bin/
+        ln -sf /bin/busybox bin/sh
+        ln -sf /bin/busybox bin/mount
+        ln -sf /bin/busybox bin/mknod
+        ln -sf /bin/busybox bin/sleep
+        ln -sf /bin/busybox bin/echo
+        ln -sf /bin/busybox bin/df
+        ln -sf /bin/busybox bin/ls
+        ln -sf /bin/busybox bin/reboot
     elif [[ -f "/bin/sh" ]]; then
         cp /bin/sh bin/
     fi
@@ -496,6 +504,26 @@ INIT_EOF
 
     chmod +x ./init
     
+    # Verify init script exists
+    echo "🔍 Verifying init script..."
+    if [[ -f "./init" ]]; then
+        echo "✅ Init script created successfully"
+        ls -la ./init
+    else
+        echo "❌ Error: Init script not found"
+        exit 1
+    fi
+    
+    # Verify essential binaries
+    echo "🔍 Verifying essential binaries..."
+    if [[ -f "./bin/sh" ]]; then
+        echo "✅ Shell binary found"
+    else
+        echo "⚠️  Warning: Shell binary not found"
+    fi
+
+    chmod +x ./init
+    
     # Create minimal initrd
     echo "📦 Creating minimal initrd..."
     find . | cpio -o -H newc | gzip > /boot/initrd_pe
@@ -517,8 +545,8 @@ configure_grub_builtin_pe() {
 exec tail -n +3 \$0
 # Built-in PE Boot entry for LVM extension (Embedded Script)
 menuentry "PE Boot - LVM Extension (Embedded)" {
-    set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 quiet
+    search --file --set=root /boot/initrd_pe
+    linux /boot/vmlinuz_pe quiet
     initrd /boot/initrd_pe
 }
 EOF
@@ -582,8 +610,8 @@ provide_automatic_boot_info() {
     echo "2. In GRUB menu, select 'PE Boot - LVM Extension (Embedded)'"
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
     echo "4. Try these commands:"
-    echo "   - set root=(hd0,1)"
-    echo "   - linux /boot/vmlinuz_pe root=/dev/ram0 quiet"
+    echo "   - search --file --set=root /boot/initrd_pe"
+    echo "   - linux /boot/vmlinuz_pe quiet"
     echo "   - initrd /boot/initrd_pe"
     echo "5. Press Ctrl+X to boot"
     echo ""
