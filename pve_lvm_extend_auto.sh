@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003400"
+echo "V 250806003500"
 echo "=============================="
 
 # Check root privileges
@@ -348,13 +348,39 @@ prepare_linux_pe() {
     # Download Tiny Core Linux with parallel download for speed
     echo "📥 Downloading Tiny Core Linux with parallel download..."
     
-    # Use aria2c if available, otherwise use wget with resume
-    if command -v aria2c &> /dev/null; then
-        echo "Using aria2c for fast parallel download..."
-        aria2c -x 16 -s 16 -o tinycore.iso "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.isoTinyCorePure64-12.0.iso" -d /tmp/
-    else
-        echo "Using wget with resume capability..."
-        wget -c -O /tmp/tinycore.iso "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+    # Define multiple mirrors for reliability
+    local mirrors=(
+        "https://mirror.math.princeton.edu/pub/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+        "http://tinycorelinux.net/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+        "https://distro.ibiblio.org/tinycorelinux/12.x/x86_64/release/TinyCorePure64-12.0.iso"
+    )
+    
+    local download_success=false
+    
+    # Try each mirror
+    for mirror in "${mirrors[@]}"; do
+        echo "🔄 Trying mirror: $mirror"
+        
+        if command -v aria2c &> /dev/null; then
+            echo "Using aria2c for fast parallel download..."
+            if aria2c -x 16 -s 16 -o tinycore.iso "$mirror" -d /tmp/; then
+                download_success=true
+                break
+            fi
+        else
+            echo "Using wget with resume capability..."
+            if wget -c -O /tmp/tinycore.iso "$mirror"; then
+                download_success=true
+                break
+            fi
+        fi
+        
+        echo "❌ Failed to download from $mirror, trying next mirror..."
+    done
+    
+    if [[ "$download_success" == "false" ]]; then
+        echo "❌ Error: Failed to download Tiny Core Linux from all mirrors"
+        exit 1
     fi
     
     # Mount ISO and extract kernel and initrd
