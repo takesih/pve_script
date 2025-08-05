@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003500"
+echo "V 250806003600"
 echo "=============================="
 
 # Check root privileges
@@ -873,7 +873,6 @@ EOF
     
     cat >> /etc/grub.d/40_pe_lvm_extend << EOF
     insmod ext2
-    insmod ext4
     insmod part_gpt
     insmod part_msdos
     insmod lvm
@@ -943,8 +942,7 @@ provide_automatic_boot_info() {
     echo "  - Ensure stable power supply during operation"
     echo "  - Operation will take 5-10 minutes"
     echo ""
-    echo "🔄 Rebooting to PE environment in 30 seconds..."
-    echo "Press Ctrl+C to cancel"
+    echo "🔄 Ready to reboot to PE environment"
     echo ""
     echo "📋 Manual boot instructions (if automatic boot fails):"
     echo "1. Reboot the system"
@@ -954,16 +952,19 @@ provide_automatic_boot_info() {
     echo "5. Add: initrd /pe/initrd-custom"
     echo "6. Press Ctrl+X to boot"
     echo ""
+    echo "Press ENTER to continue or ESC to cancel..."
     
-    # Countdown
-    for i in {30..1}; do
-        echo -n "Rebooting in $i seconds... "
-        sleep 1
-        echo ""
+    # Wait for user input
+    while true; do
+        read -rsn1 key
+        if [[ "$key" == "" ]]; then
+            echo "🔄 Rebooting to PE environment now..."
+            reboot
+        elif [[ "$key" == $'\x1b' ]]; then
+            echo "❌ Operation cancelled by user."
+            exit 0
+        fi
     done
-    
-    echo "🔄 Rebooting to PE environment now..."
-    reboot
 }
 
 # Main execution
