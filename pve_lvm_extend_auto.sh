@@ -407,10 +407,10 @@ prepare_linux_pe() {
     
     # Copy kernel (try multiple names)
     if [[ -f "/mnt/boot/vmlinuz64" ]]; then
-        cp /mnt/boot/vmlinuz64 /boot/pe/vmlinuz
+        cp /mnt/boot/vmlinuz64 /boot/vmlinuz_pe
         echo "✅ Copied vmlinuz64"
     elif [[ -f "/mnt/boot/vmlinuz" ]]; then
-        cp /mnt/boot/vmlinuz /boot/pe/vmlinuz
+        cp /mnt/boot/vmlinuz /boot/vmlinuz_pe
         echo "✅ Copied vmlinuz"
     else
         echo "❌ Error: No kernel file found"
@@ -419,10 +419,10 @@ prepare_linux_pe() {
     
     # Copy initrd (try multiple names)
     if [[ -f "/mnt/boot/corepure64.gz" ]]; then
-        cp /mnt/boot/corepure64.gz /boot/pe/initrd
+        cp /mnt/boot/corepure64.gz /boot/initrd_pe
         echo "✅ Copied corepure64.gz"
     elif [[ -f "/mnt/boot/core.gz" ]]; then
-        cp /mnt/boot/core.gz /boot/pe/initrd
+        cp /mnt/boot/core.gz /boot/initrd_pe
         echo "✅ Copied core.gz"
     else
         echo "❌ Error: No initrd file found"
@@ -433,7 +433,7 @@ prepare_linux_pe() {
     echo "🔧 Creating custom initrd with LVM tools..."
     mkdir -p /tmp/initrd-extract
     cd /tmp/initrd-extract
-    zcat /boot/pe/initrd | cpio -idmv
+    zcat /boot/initrd_pe | cpio -idmv
     
     # Add LVM tools to initrd (Tiny Core already has basic LVM tools)
     # Copy additional tools if needed
@@ -466,7 +466,7 @@ prepare_linux_pe() {
     fi
     
     # Repack initrd
-    find . | cpio -o -H newc | gzip > /boot/pe/initrd-custom
+    find . | cpio -o -H newc | gzip > /boot/initrd_pe
     
     # Cleanup
     cd /
@@ -477,15 +477,15 @@ prepare_linux_pe() {
     
     # Verify PE environment
     echo "🔍 Verifying PE environment..."
-    if [[ -f "/boot/pe/vmlinuz" ]]; then
-        echo "✅ Kernel file exists: $(ls -lh /boot/pe/vmlinuz)"
+    if [[ -f "/boot/vmlinuz_pe" ]]; then
+        echo "✅ Kernel file exists: $(ls -lh /boot/vmlinuz_pe)"
     else
         echo "❌ Error: Kernel file not found"
         exit 1
     fi
     
-    if [[ -f "/boot/pe/initrd-custom" ]]; then
-        echo "✅ Initrd file exists: $(ls -lh /boot/pe/initrd-custom)"
+    if [[ -f "/boot/initrd_pe" ]]; then
+        echo "✅ Initrd file exists: $(ls -lh /boot/initrd_pe)"
     else
         echo "❌ Error: Initrd file not found"
         exit 1
@@ -499,27 +499,27 @@ prepare_linux_pe() {
     ls -la /boot/pe/ 2>/dev/null || echo "❌ /boot/pe/ directory not found"
     
     echo "Kernel file details:"
-    if [[ -f "/boot/pe/vmlinuz" ]]; then
-        file /boot/pe/vmlinuz
-        ls -lh /boot/pe/vmlinuz
+    if [[ -f "/boot/vmlinuz_pe" ]]; then
+        file /boot/vmlinuz_pe
+        ls -lh /boot/vmlinuz_pe
     else
-        echo "❌ Kernel file not found at /boot/pe/vmlinuz"
+        echo "❌ Kernel file not found at /boot/vmlinuz_pe"
     fi
     
     echo "Initrd file details:"
-    if [[ -f "/boot/pe/initrd-custom" ]]; then
-        file /boot/pe/initrd-custom
-        ls -lh /boot/pe/initrd-custom
+    if [[ -f "/boot/initrd_pe" ]]; then
+        file /boot/initrd_pe
+        ls -lh /boot/initrd_pe
     else
-        echo "❌ Initrd file not found at /boot/pe/initrd-custom"
+        echo "❌ Initrd file not found at /boot/initrd_pe"
     fi
     
     # Check if files are accessible from GRUB perspective
     echo "🔍 Checking file accessibility..."
-    if [[ -f "/boot/pe/vmlinuz" ]] && [[ -f "/boot/pe/initrd-custom" ]]; then
+    if [[ -f "/boot/vmlinuz_pe" ]] && [[ -f "/boot/initrd_pe" ]]; then
         echo "✅ PE files are accessible"
-        echo "Kernel size: $(stat -c%s /boot/pe/vmlinuz) bytes"
-        echo "Initrd size: $(stat -c%s /boot/pe/initrd-custom) bytes"
+        echo "Kernel size: $(stat -c%s /boot/vmlinuz_pe) bytes"
+        echo "Initrd size: $(stat -c%s /boot/initrd_pe) bytes"
     else
         echo "❌ PE files are not accessible"
         exit 1
@@ -964,32 +964,32 @@ exec tail -n +3 \$0
 # PE Boot entry for LVM extension
 menuentry "PE Boot - LVM Extension" {
     set root=(hd0,1)
-    linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd_pe
 }
 
 menuentry "PE Boot - LVM Extension (Alternative)" {
     set root=(hd0,2)
-    linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd_pe
 }
 
 menuentry "PE Boot - LVM Extension (GPT)" {
     set root=(hd0,gpt1)
-    linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
-    initrd /boot/pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    initrd /boot/initrd_pe
 }
 
 menuentry "PE Boot - LVM Extension (Simple)" {
     set root=(hd0,1)
-    linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh
-    initrd /boot/pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh
+    initrd /boot/initrd_pe
 }
 
 menuentry "PE Boot - LVM Extension (Debug)" {
     set root=(hd0,1)
-    linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug
-    initrd /boot/pe/initrd-custom
+    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug
+    initrd /boot/initrd_pe
 }
 EOF
 
@@ -1082,15 +1082,15 @@ provide_automatic_boot_info() {
     echo "   - 'PE Boot - LVM Extension (Debug)'"
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
     echo "4. Try these commands in order:"
-    echo "   - set root=(hd0,1) && linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - set root=(hd0,2) && linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - set root=(hd0,gpt1) && linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "   - initrd /boot/pe/initrd-custom"
+    echo "   - set root=(hd0,1) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - set root=(hd0,2) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - set root=(hd0,gpt1) && linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - initrd /boot/initrd_pe"
     echo "5. Press Ctrl+X to boot"
     echo ""
     echo "🔍 Debug mode (if normal boot fails):"
     echo "   - Select 'PE Boot - LVM Extension (Debug)' for verbose output"
-    echo "   - Or manually: linux /boot/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug"
+    echo "   - Or manually: linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh debug"
     echo ""
     echo "Press ENTER to continue or ESC to cancel..."
     
