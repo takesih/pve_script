@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005400"
+echo "V 250806005500"
 echo "=============================="
 
 # Check root privileges
@@ -377,7 +377,7 @@ EOF
     
     echo "✅ Configuration file created"
     
-    # Use Proxmox VE's actual initrd directly
+        # Use Proxmox VE's actual initrd directly
     echo "🔧 Using Proxmox VE's actual initrd directly..."
     
     # Copy the actual Proxmox VE initrd
@@ -388,8 +388,6 @@ EOF
         echo "❌ Error: Proxmox VE initrd not found"
         exit 1
     fi
-
-    chmod +x ./init
     
     # Create minimal initrd
     echo "📦 Creating minimal initrd..."
