@@ -4,7 +4,7 @@
 # Script to extend LVM volumes after disk expansion with automatic PE boot
 # Designed for remote systems without user intervention
 # Based on Proxmox forum: https://forum.proxmox.com/threads/extend-local-lvm-proxmox.133478/#post-589215
-# Version: 2025-08-05 234855
+# Version: 2025-08-05 235000
 # Author: Proxmox LVM Management Tool
 
 set -e
@@ -460,11 +460,17 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         # Ensure free_space is a valid number
         if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
             echo "❌ Invalid free space: $free_space"
-            exit 1
+            echo "🔄 Using fallback calculation..."
+            free_space=50  # Fallback to 50G
         fi
         
         # Calculate pool size (95% of free space)
         local pool_size=$((free_space * 95 / 100))
+        
+        # Ensure minimum size
+        if [[ $pool_size -lt 20 ]]; then
+            pool_size=20
+        fi
         
         echo "Free space: ${free_space}G"
         echo "Pool size: ${pool_size}G"
@@ -473,7 +479,15 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
             echo "✅ Thin pool created successfully"
         else
             echo "❌ Thin pool creation failed"
-            exit 1
+            echo "🔄 Trying with smaller size..."
+            # Try with smaller size
+            local smaller_size=$((pool_size / 2))
+            if lvcreate -L "${smaller_size}G" -T pve/data; then
+                echo "✅ Thin pool created with smaller size"
+            else
+                echo "❌ Thin pool creation failed even with smaller size"
+                exit 1
+            fi
         fi
         
         echo "📏 Creating thin volume..."
@@ -482,20 +496,35 @@ if [[ "$DATA_VOLUME_TYPE" == "thin" ]]; then
         # Ensure thin_pool_size is a valid number
         if [[ ! "$thin_pool_size" =~ ^[0-9]+$ ]]; then
             echo "❌ Invalid thin pool size: $thin_pool_size"
-            exit 1
+            echo "🔄 Using fallback calculation..."
+            thin_pool_size=50  # Fallback to 50G
         fi
         
         # Calculate thin volume size (95% of pool size)
         local thin_volume_size=$((thin_pool_size * 95 / 100))
         
+        # Ensure minimum size
+        if [[ $thin_volume_size -lt 10 ]]; then
+            thin_volume_size=10
+        fi
+        
         echo "Thin pool size: ${thin_pool_size}G"
         echo "Thin volume size: ${thin_volume_size}G"
         
+        # Create thin volume with explicit size
         if lvcreate -V "${thin_volume_size}G" -T pve/data -n data; then
             echo "✅ Thin volume created successfully"
         else
             echo "❌ Thin volume creation failed"
-            exit 1
+            echo "🔄 Trying with smaller size..."
+            # Try with smaller size
+            local smaller_size=$((thin_volume_size / 2))
+            if lvcreate -V "${smaller_size}G" -T pve/data -n data; then
+                echo "✅ Thin volume created with smaller size"
+            else
+                echo "❌ Thin volume creation failed even with smaller size"
+                exit 1
+            fi
         fi
         
         echo "📏 Formatting thin volume..."
@@ -524,7 +553,13 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
         # Ensure free_space is a valid number
         if [[ ! "$free_space" =~ ^[0-9]+$ ]]; then
             echo "❌ Invalid free space: $free_space"
-            exit 1
+            echo "🔄 Using fallback calculation..."
+            free_space=50  # Fallback to 50G
+        fi
+        
+        # Ensure minimum size
+        if [[ $free_space -lt 10 ]]; then
+            free_space=10
         fi
         
         echo "Free space: ${free_space}G"
@@ -533,7 +568,15 @@ elif [[ "$DATA_VOLUME_TYPE" == "regular" ]]; then
             echo "✅ Regular LVM volume created successfully"
         else
             echo "❌ Regular LVM volume creation failed"
-            exit 1
+            echo "🔄 Trying with smaller size..."
+            # Try with smaller size
+            local smaller_size=$((free_space / 2))
+            if lvcreate -L "${smaller_size}G" -n data pve; then
+                echo "✅ Regular LVM volume created with smaller size"
+            else
+                echo "❌ Regular LVM volume creation failed even with smaller size"
+                exit 1
+            fi
         fi
         
         if mkfs.ext4 /dev/pve/data; then
