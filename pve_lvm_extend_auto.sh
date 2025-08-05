@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806004200"
+echo "V 250806004300"
 echo "=============================="
 
 # Check root privileges
@@ -463,6 +463,37 @@ prepare_linux_pe() {
     fi
     if [[ -f "/usr/bin/bc" ]]; then
         cp /usr/bin/bc /tmp/initrd-extract/usr/bin/ 2>/dev/null || true
+    fi
+    
+    # Create PE script directory in initrd and copy PE script
+    mkdir -p /tmp/initrd-extract/boot/pe
+    if [[ -f "/boot/pe/auto-lvm-extend.sh" ]]; then
+        cp /boot/pe/auto-lvm-extend.sh /tmp/initrd-extract/boot/pe/
+        chmod +x /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh
+        echo "✅ PE script copied to initrd"
+    else
+        echo "⚠️  PE script not found, will create in initrd"
+        # Create basic PE script in initrd
+        cat > /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh << 'INITRD_EOF'
+#!/bin/sh
+echo "🚀 Starting automatic LVM extension in PE environment..."
+sleep 5
+echo "📊 Current system status:"
+df -h
+echo ""
+lvs --units g
+echo ""
+echo "🔄 Performing LVM operations..."
+# Basic LVM operations
+pvresize $(pvs --noheadings -o pv_name | head -1)
+lvextend -l +100%FREE /dev/pve/root
+resize2fs /dev/pve/root
+echo "✅ LVM operations completed"
+echo "🔄 Rebooting..."
+reboot
+INITRD_EOF
+        chmod +x /tmp/initrd-extract/boot/pe/auto-lvm-extend.sh
+        echo "✅ Basic PE script created in initrd"
     fi
     
     # Repack initrd
