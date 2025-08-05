@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005000"
+echo "V 250806005100"
 echo "=============================="
 
 # Check root privileges
@@ -264,7 +264,7 @@ cleanup_existing_pe_config() {
 
 # Function to create built-in PE environment
 create_builtin_pe_environment() {
-    echo "🔄 Creating built-in PE environment..."
+    echo "🔄 Creating built-in PE environment with embedded script..."
     
     # Create PE directory
     mkdir -p /boot/pe
@@ -290,7 +290,7 @@ create_builtin_pe_environment() {
         exit 1
     fi
     
-    # Create enhanced PE script with embedded LVM operations
+    # Create enhanced PE script
     echo "🔧 Creating enhanced PE script..."
     cat > /boot/pe/auto-lvm-extend.sh << 'PE_EOF'
 #!/bin/sh
@@ -376,21 +376,89 @@ FILESYSTEM_TYPE=$FILESYSTEM_TYPE
 EOF
     
     echo "✅ Configuration file created"
-    echo "✅ Built-in PE environment prepared successfully"
+    
+    # Embed script into initrd
+    echo "🔧 Embedding script into initrd..."
+    
+    # Create temporary directory
+    mkdir -p /tmp/initrd-extract
+    cd /tmp/initrd-extract
+    
+    # Extract current initrd
+    echo "📦 Extracting initrd..."
+    zcat /boot/initrd_pe | cpio -idmv
+    
+    # Copy PE script into initrd
+    echo "📝 Copying PE script into initrd..."
+    cp /boot/pe/auto-lvm-extend.sh ./auto-lvm-extend.sh
+    chmod +x ./auto-lvm-extend.sh
+    
+    # Create init script that will run our PE script
+    echo "📝 Creating init script..."
+    cat > ./init << 'INIT_EOF'
+#!/bin/sh
+
+# Mount necessary filesystems
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+
+# Create device nodes
+mknod /dev/console c 5 1
+mknod /dev/null c 1 3
+mknod /dev/zero c 1 5
+mknod /dev/random c 1 8
+mknod /dev/urandom c 1 9
+
+# Set up environment
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/
+export TERM=linux
+
+# Load LVM modules
+modprobe dm-mod 2>/dev/null || true
+modprobe lvm 2>/dev/null || true
+
+# Wait for devices to be ready
+sleep 2
+
+# Run our LVM extension script
+if [[ -f "/auto-lvm-extend.sh" ]]; then
+    echo "🚀 Starting embedded LVM extension script..."
+    exec /auto-lvm-extend.sh
+else
+    echo "❌ Error: LVM extension script not found in initrd"
+    echo "🔄 Rebooting in 10 seconds..."
+    sleep 10
+    reboot
+fi
+INIT_EOF
+
+    chmod +x ./init
+    
+    # Repack initrd
+    echo "📦 Repacking initrd with embedded script..."
+    find . | cpio -o -H newc | gzip > /boot/initrd_pe
+    
+    # Cleanup
+    cd /
+    rm -rf /tmp/initrd-extract
+    
+    echo "✅ Built-in PE environment prepared successfully with embedded script"
 }
 
 # Function to configure GRUB for built-in PE boot
 configure_grub_builtin_pe() {
     echo "🔄 Configuring GRUB for built-in PE boot..."
     
-    # Create simple GRUB entry
+    # Create simple GRUB entry without init parameter
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
 #!/bin/bash
 exec tail -n +3 \$0
-# Built-in PE Boot entry for LVM extension
-menuentry "PE Boot - LVM Extension (Built-in)" {
+# Built-in PE Boot entry for LVM extension (Embedded Script)
+menuentry "PE Boot - LVM Extension (Embedded)" {
     set root=(hd0,1)
-    linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet
+    linux /boot/vmlinuz_pe root=/dev/ram0 quiet
     initrd /boot/initrd_pe
 }
 EOF
@@ -407,13 +475,13 @@ EOF
     
     # Set PE boot as default
     echo "🔄 Setting PE boot as default..."
-    if grub-reboot "PE Boot - LVM Extension (Built-in)"; then
+    if grub-reboot "PE Boot - LVM Extension (Embedded)"; then
         echo "✅ PE boot set as default"
     else
         echo "⚠️  Failed to set PE boot as default, but continuing..."
     fi
     
-    echo "✅ GRUB configured for built-in PE boot"
+    echo "✅ GRUB configured for embedded PE boot"
 }
 
 # Function to provide automatic boot instructions
@@ -451,11 +519,11 @@ provide_automatic_boot_info() {
     echo ""
     echo "📋 Manual boot instructions (if automatic boot fails):"
     echo "1. Reboot the system"
-    echo "2. In GRUB menu, select 'PE Boot - LVM Extension (Built-in)'"
+    echo "2. In GRUB menu, select 'PE Boot - LVM Extension (Embedded)'"
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
     echo "4. Try these commands:"
     echo "   - set root=(hd0,1)"
-    echo "   - linux /boot/vmlinuz_pe root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet"
+    echo "   - linux /boot/vmlinuz_pe root=/dev/ram0 quiet"
     echo "   - initrd /boot/initrd_pe"
     echo "5. Press Ctrl+X to boot"
     echo ""
