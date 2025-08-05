@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Built-in PE Environment"
 echo "Designed for remote systems without user intervention"
-echo "V 250806005700"
+echo "V 250806005800"
 echo "=============================="
 
 # Check root privileges
@@ -509,7 +509,7 @@ INIT_EOF
     # Create initrd (exclude problematic directories)
     echo "📦 Creating minimal initrd..."
     cd "$WORKDIR"
-    find . -type f -o -type d | grep -v "^\.$" | cpio -o -H newc 2>/dev/null | gzip > /boot/initrd_pe
+    find . -type f -o -type d | grep -v "^\.$" | grep -v "/dri/" | grep -v "/debug/" | grep -v "/irq/" | grep -v "/fscaps" | grep -v "/uevent_helper" | grep -v "/rcu_normal" | grep -v "/crash_elfcorehdr" | cpio -o -H newc 2>/dev/null | gzip > /boot/initrd_pe
     
     # Cleanup
     cd /
