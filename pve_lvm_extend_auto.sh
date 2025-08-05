@@ -11,7 +11,7 @@ set -e
 echo "=============================="
 echo "Proxmox LVM Extension Tool with Automatic PE Boot"
 echo "Designed for remote systems without user intervention"
-echo "V 250806003700"
+echo "V 250806003800"
 echo "=============================="
 
 # Check root privileges
@@ -851,14 +851,30 @@ generate_grub_config() {
     
     echo "Using GRUB root: $grub_root"
     
-    # Detect if system is UEFI or BIOS
+    # Detect if system is UEFI or BIOS with more detailed detection
     local is_uefi=false
+    local boot_mode="bios"
+    
     if [[ -d "/sys/firmware/efi" ]]; then
         is_uefi=true
+        boot_mode="uefi"
         echo "Detected UEFI system"
     else
-        echo "Detected BIOS system"
+        echo "Detected BIOS/Legacy system"
     fi
+    
+    # Detect GRUB installation type
+    local grub_install_type=""
+    if [[ -f "/boot/grub/grub.cfg" ]]; then
+        if grep -q "efi" /boot/grub/grub.cfg; then
+            grub_install_type="efi"
+        else
+            grub_install_type="legacy"
+        fi
+    fi
+    
+    echo "Boot mode: $boot_mode"
+    echo "GRUB install type: $grub_install_type"
     
     # Create GRUB entry for PE boot with appropriate configuration
     cat > /etc/grub.d/40_pe_lvm_extend << EOF
@@ -876,8 +892,15 @@ EOF
     insmod video_bochs
     insmod video_cirrus
 EOF
+    else
+        cat >> /etc/grub.d/40_pe_lvm_extend << EOF
+    insmod video_bochs
+    insmod video_cirrus
+    insmod vga
+EOF
     fi
     
+    # Add common modules
     cat >> /etc/grub.d/40_pe_lvm_extend << EOF
     insmod ext2
     insmod part_gpt
@@ -885,6 +908,8 @@ EOF
     insmod lvm
     insmod loopback
     insmod iso9660
+    insmod normal
+    insmod configfile
     $grub_root
     linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
     initrd /pe/initrd-custom
@@ -915,6 +940,27 @@ EOF
     echo "  Filesystem: $FILESYSTEM_TYPE"
     echo "  Boot device: $boot_device"
     echo "  GRUB device: $grub_device"
+    echo "  Boot mode: $boot_mode"
+    echo "  GRUB install type: $grub_install_type"
+    
+    # Create backup GRUB entry with simpler configuration
+    echo "🔄 Creating backup GRUB entry..."
+    cat > /etc/grub.d/41_pe_lvm_extend_backup << EOF
+#!/bin/bash
+exec tail -n +3 \$0
+# PE Boot entry for LVM extension (Backup)
+menuentry "PE Boot - LVM Extension (Backup)" {
+    insmod ext2
+    insmod part_gpt
+    insmod part_msdos
+    insmod lvm
+    set root=(hd0,1)
+    linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh quiet splash
+    initrd /pe/initrd-custom
+}
+EOF
+
+    chmod +x /etc/grub.d/41_pe_lvm_extend_backup
     
     # Show current GRUB configuration for debugging
     echo ""
@@ -955,10 +1001,14 @@ provide_automatic_boot_info() {
     echo ""
     echo "📋 Manual boot instructions (if automatic boot fails):"
     echo "1. Reboot the system"
-    echo "2. In GRUB menu, select 'PE Boot - LVM Extension'"
+    echo "2. In GRUB menu, select 'PE Boot - LVM Extension' or 'PE Boot - LVM Extension (Backup)'"
     echo "3. If menu doesn't appear, press 'e' to edit boot entry"
-    echo "4. Add: linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
-    echo "5. Add: initrd /pe/initrd-custom"
+    echo "4. For UEFI systems, try:"
+    echo "   - linux /pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - initrd /pe/initrd-custom"
+    echo "5. For BIOS/MBR systems, try:"
+    echo "   - linux (hd0,1)/pe/vmlinuz root=/dev/ram0 init=/boot/pe/auto-lvm-extend.sh"
+    echo "   - initrd (hd0,1)/pe/initrd-custom"
     echo "6. Press Ctrl+X to boot"
     echo ""
     echo "Press ENTER to continue or ESC to cancel..."
