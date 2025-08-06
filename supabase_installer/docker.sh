@@ -227,4 +227,385 @@ install_docker() {
     
     log "INFO" "=== Docker 설치 완료 ==="
     return 0
+}
+
+# Dockge 설치 함수들
+create_dockge_directories() {
+    log "INFO" "Dockge 디렉토리를 생성하는 중..."
+    
+    if ! exec_in_container "mkdir -p /opt/dockge"; then
+        log "ERROR" "Dockge 디렉토리 생성에 실패했습니다."
+        return 1
+    fi
+    
+    if ! exec_in_container "mkdir -p /opt/dockge/stacks"; then
+        log "ERROR" "Dockge stacks 디렉토리 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "Dockge 디렉토리 생성 완료"
+    return 0
+}
+
+create_dockge_compose() {
+    log "INFO" "Dockge docker-compose.yml 파일을 생성하는 중..."
+    
+    local compose_content="version: '3.8'
+services:
+  dockge:
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    ports:
+      - \"$DOCKGE_PORT:5001\"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/dockge/data:/app/data
+      - /opt/dockge/stacks:/opt/stacks
+    environment:
+      - DOCKGE_STACKS_DIR=/opt/stacks
+    networks:
+      - dockge_network
+
+networks:
+  dockge_network:
+    driver: bridge"
+    
+    if ! exec_in_container "cat > /opt/dockge/docker-compose.yml << 'EOF'
+$compose_content
+EOF"; then
+        log "ERROR" "Dockge docker-compose.yml 파일 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "Dockge docker-compose.yml 파일 생성 완료"
+    return 0
+}
+
+start_dockge_service() {
+    log "INFO" "Dockge 서비스를 시작하는 중..."
+    
+    if ! exec_in_container "cd /opt/dockge && docker-compose up -d"; then
+        log "ERROR" "Dockge 서비스 시작에 실패했습니다."
+        return 1
+    fi
+    
+    # 서비스 시작 대기
+    sleep 10
+    
+    log "INFO" "Dockge 서비스 시작 완료"
+    return 0
+}
+
+verify_dockge_installation() {
+    log "INFO" "Dockge 설치를 검증하는 중..."
+    
+    # 컨테이너 상태 확인
+    if ! exec_in_container "docker ps | grep -q dockge"; then
+        log "ERROR" "Dockge 컨테이너가 실행되지 않고 있습니다."
+        return 1
+    fi
+    
+    # 웹 인터페이스 접근 확인
+    local container_ip=$(pct exec "$LXC_ID" -- hostname -I | awk '{print $1}')
+    if ! curl -s "http://$container_ip:$DOCKGE_PORT" > /dev/null; then
+        log "WARN" "Dockge 웹 인터페이스에 접근할 수 없습니다."
+    fi
+    
+    log "INFO" "Dockge 설치 검증 완료"
+    return 0
+}
+
+# CloudCmd 설치 함수들
+create_cloudcmd_directories() {
+    log "INFO" "CloudCmd 디렉토리를 생성하는 중..."
+    
+    if ! exec_in_container "mkdir -p /opt/cloudcmd"; then
+        log "ERROR" "CloudCmd 디렉토리 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "CloudCmd 디렉토리 생성 완료"
+    return 0
+}
+
+create_cloudcmd_compose() {
+    log "INFO" "CloudCmd docker-compose.yml 파일을 생성하는 중..."
+    
+    local compose_content="version: '3.8'
+services:
+  cloudcmd:
+    image: coderaiser/cloudcmd:latest
+    container_name: cloudcmd
+    restart: unless-stopped
+    ports:
+      - \"$CLOUDCMD_PORT:8000\"
+    volumes:
+      - /:/mnt/fs:ro
+      - /opt/cloudcmd/data:/root
+    environment:
+      - CLOUDCMD_ROOT=/mnt/fs
+      - CLOUDCMD_EDITOR=dword
+      - CLOUDCMD_TERMINAL=true
+      - CLOUDCMD_CONSOLE=true
+      - CLOUDCMD_AUTH=false
+      - CLOUDCMD_USERNAME=admin
+      - CLOUDCMD_PASSWORD=
+    networks:
+      - cloudcmd_network
+    command: [\"--no-auth\", \"--no-server\", \"--port\", \"8000\"]
+
+networks:
+  cloudcmd_network:
+    driver: bridge"
+    
+    if ! exec_in_container "cat > /opt/cloudcmd/docker-compose.yml << 'EOF'
+$compose_content
+EOF"; then
+        log "ERROR" "CloudCmd docker-compose.yml 파일 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "CloudCmd docker-compose.yml 파일 생성 완료"
+    return 0
+}
+
+start_cloudcmd_service() {
+    log "INFO" "CloudCmd 서비스를 시작하는 중..."
+    
+    if ! exec_in_container "cd /opt/cloudcmd && docker-compose up -d"; then
+        log "ERROR" "CloudCmd 서비스 시작에 실패했습니다."
+        return 1
+    fi
+    
+    # 서비스 시작 대기
+    sleep 10
+    
+    log "INFO" "CloudCmd 서비스 시작 완료"
+    return 0
+}
+
+verify_cloudcmd_installation() {
+    log "INFO" "CloudCmd 설치를 검증하는 중..."
+    
+    # 컨테이너 상태 확인
+    if ! exec_in_container "docker ps | grep -q cloudcmd"; then
+        log "ERROR" "CloudCmd 컨테이너가 실행되지 않고 있습니다."
+        return 1
+    fi
+    
+    log "INFO" "CloudCmd 설치 검증 완료"
+    return 0
+}
+
+# Supabase 설치 함수들
+create_supabase_directories() {
+    log "INFO" "Supabase 디렉토리를 생성하는 중..."
+    
+    if ! exec_in_container "mkdir -p /opt/supabase"; then
+        log "ERROR" "Supabase 디렉토리 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "Supabase 디렉토리 생성 완료"
+    return 0
+}
+
+download_supabase_configs() {
+    log "INFO" "Supabase 설정 파일을 다운로드하는 중..."
+    
+    local base_url="https://raw.githubusercontent.com/supabase/supabase/master/docker"
+    
+    # docker-compose.yml 다운로드
+    if ! exec_in_container "curl -fsSL '$base_url/docker-compose.yml' -o /opt/supabase/docker-compose.yml"; then
+        log "ERROR" "Supabase docker-compose.yml 다운로드에 실패했습니다."
+        return 1
+    fi
+    
+    # .env.example 다운로드
+    if ! exec_in_container "curl -fsSL '$base_url/.env.example' -o /opt/supabase/.env.example"; then
+        log "ERROR" "Supabase .env.example 다운로드에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "Supabase 설정 파일 다운로드 완료"
+    return 0
+}
+
+create_supabase_env() {
+    log "INFO" "Supabase 환경변수 파일을 생성하는 중..."
+    
+    local env_content="# Supabase Configuration
+POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+JWT_SECRET=$JWT_SECRET
+ANON_KEY=$ANON_KEY
+SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY
+API_EXTERNAL_URL=$API_EXTERNAL_URL
+SUPABASE_PUBLIC_URL=$SUPABASE_PUBLIC_URL
+
+# Database
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=postgres
+
+# API
+API_PORT=8001
+STUDIO_PORT=$SUPABASE_STUDIO_PORT
+
+# Auth
+JWT_EXPIRY=3600
+JWT_DEFAULT_GROUP_NAME=authenticated
+
+# Storage
+STORAGE_BACKEND=file
+FILE_STORAGE_BACKEND_PATH=/var/lib/storage
+
+# SMTP (Optional)
+SMTP_HOST=$SMTP_HOST
+SMTP_PORT=$SMTP_PORT
+SMTP_USER=$SMTP_USER
+SMTP_PASS=$SMTP_PASS
+SMTP_SENDER_NAME=Supabase
+SMTP_SENDER_EMAIL=noreply@supabase.com"
+    
+    if ! exec_in_container "cat > /opt/supabase/.env << 'EOF'
+$env_content
+EOF"; then
+        log "ERROR" "Supabase .env 파일 생성에 실패했습니다."
+        return 1
+    fi
+    
+    log "INFO" "Supabase 환경변수 파일 생성 완료"
+    return 0
+}
+
+start_supabase_service() {
+    log "INFO" "Supabase 서비스를 시작하는 중..."
+    
+    if ! exec_in_container "cd /opt/supabase && docker-compose up -d"; then
+        log "ERROR" "Supabase 서비스 시작에 실패했습니다."
+        return 1
+    fi
+    
+    # 서비스 시작 대기
+    sleep 30
+    
+    log "INFO" "Supabase 서비스 시작 완료"
+    return 0
+}
+
+verify_supabase_installation() {
+    log "INFO" "Supabase 설치를 검증하는 중..."
+    
+    # 컨테이너 상태 확인
+    if ! exec_in_container "docker ps | grep -q supabase"; then
+        log "ERROR" "Supabase 컨테이너가 실행되지 않고 있습니다."
+        return 1
+    fi
+    
+    # API 상태 확인
+    local container_ip=$(pct exec "$LXC_ID" -- hostname -I | awk '{print $1}')
+    if ! curl -s "http://$container_ip:8001/health" > /dev/null; then
+        log "WARN" "Supabase API에 접근할 수 없습니다."
+    fi
+    
+    log "INFO" "Supabase 설치 검증 완료"
+    return 0
+}
+
+# Dockge 설치 메인 함수
+install_dockge() {
+    log "INFO" "=== Dockge 설치 시작 ==="
+    
+    show_progress 1 4 "Dockge 디렉토리 생성 중..."
+    if ! create_dockge_directories; then
+        return 1
+    fi
+    
+    show_progress 2 4 "Dockge Compose 파일 생성 중..."
+    if ! create_dockge_compose; then
+        return 1
+    fi
+    
+    show_progress 3 4 "Dockge 서비스 시작 중..."
+    if ! start_dockge_service; then
+        return 1
+    fi
+    
+    show_progress 4 4 "Dockge 설치 검증 중..."
+    if ! verify_dockge_installation; then
+        return 1
+    fi
+    
+    log "INFO" "=== Dockge 설치 완료 ==="
+    log "INFO" "Dockge 웹 인터페이스: http://$DOMAIN:$DOCKGE_PORT"
+    return 0
+}
+
+# CloudCmd 설치 메인 함수
+install_cloudcmd() {
+    log "INFO" "=== CloudCmd 설치 시작 ==="
+    
+    show_progress 1 4 "CloudCmd 디렉토리 생성 중..."
+    if ! create_cloudcmd_directories; then
+        return 1
+    fi
+    
+    show_progress 2 4 "CloudCmd Compose 파일 생성 중..."
+    if ! create_cloudcmd_compose; then
+        return 1
+    fi
+    
+    show_progress 3 4 "CloudCmd 서비스 시작 중..."
+    if ! start_cloudcmd_service; then
+        return 1
+    fi
+    
+    show_progress 4 4 "CloudCmd 설치 검증 중..."
+    if ! verify_cloudcmd_installation; then
+        return 1
+    fi
+    
+    log "INFO" "=== CloudCmd 설치 완료 ==="
+    log "INFO" "CloudCmd 웹 인터페이스: http://$DOMAIN:$CLOUDCMD_PORT"
+    return 0
+}
+
+# Supabase 설치 메인 함수
+install_supabase() {
+    log "INFO" "=== Supabase 설치 시작 ==="
+    
+    show_progress 1 6 "Supabase 디렉토리 생성 중..."
+    if ! create_supabase_directories; then
+        return 1
+    fi
+    
+    show_progress 2 6 "Supabase 설정 파일 다운로드 중..."
+    if ! download_supabase_configs; then
+        return 1
+    fi
+    
+    show_progress 3 6 "Supabase 환경변수 설정 중..."
+    if ! create_supabase_env; then
+        return 1
+    fi
+    
+    show_progress 4 6 "Supabase 서비스 시작 중..."
+    if ! start_supabase_service; then
+        return 1
+    fi
+    
+    show_progress 5 6 "Supabase 설치 검증 중..."
+    if ! verify_supabase_installation; then
+        return 1
+    fi
+    
+    show_progress 6 6 "Supabase 초기 설정 중..."
+    # Supabase 초기 설정 (데이터베이스 마이그레이션 등)
+    sleep 10
+    
+    log "INFO" "=== Supabase 설치 완료 ==="
+    log "INFO" "Supabase Studio: http://$DOMAIN:$SUPABASE_STUDIO_PORT"
+    log "INFO" "Supabase API: http://$DOMAIN:8001"
+    return 0
 } 

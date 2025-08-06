@@ -76,7 +76,7 @@ fi
 # 스크립트 시작
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 250807070929"
+echo "V 250807072212"
 echo "=================================="
 
 # 오류 처리 설정
@@ -333,6 +333,24 @@ main() {
         exit 1
     fi
     
+    # Dockge 설치
+    if ! install_dockge; then
+        log "ERROR" "Dockge 설치에 실패했습니다."
+        exit 1
+    fi
+    
+    # CloudCmd 설치
+    if ! install_cloudcmd; then
+        log "ERROR" "CloudCmd 설치에 실패했습니다."
+        exit 1
+    fi
+    
+    # Supabase 설치
+    if ! install_supabase; then
+        log "ERROR" "Supabase 설치에 실패했습니다."
+        exit 1
+    fi
+    
     log "INFO" "=== 설치 완료 ==="
     log "INFO" "컨테이너 ID: $LXC_ID"
     log "INFO" "컨테이너 이름: $LXC_NAME"
@@ -344,10 +362,22 @@ main() {
     echo -e "  - 이름: ${YELLOW}$LXC_NAME${NC}"
     echo -e "  - IP: ${YELLOW}$LXC_IP${NC}"
     echo ""
+    echo -e "${BLUE}설치된 서비스:${NC}"
+    echo -e "  - Docker & Docker Compose: ${GREEN}설치됨${NC}"
+    echo -e "  - Dockge: ${GREEN}설치됨${NC} (포트: $DOCKGE_PORT)"
+    echo -e "  - CloudCmd: ${GREEN}설치됨${NC} (포트: $CLOUDCMD_PORT)"
+    echo -e "  - Supabase: ${GREEN}설치됨${NC} (Studio: $SUPABASE_STUDIO_PORT, API: 8001)"
+    echo ""
+    echo -e "${BLUE}접속 정보:${NC}"
+    echo -e "  - Dockge: ${YELLOW}http://$DOMAIN:$DOCKGE_PORT${NC}"
+    echo -e "  - CloudCmd: ${YELLOW}http://$DOMAIN:$CLOUDCMD_PORT${NC}"
+    echo -e "  - Supabase Studio: ${YELLOW}http://$DOMAIN:$SUPABASE_STUDIO_PORT${NC}"
+    echo -e "  - Supabase API: ${YELLOW}http://$DOMAIN:8001${NC}"
+    echo ""
     echo -e "${BLUE}다음 단계:${NC}"
     echo -e "  1. 컨테이너에 접속: ${YELLOW}pct enter $LXC_ID${NC}"
     echo -e "  2. Docker 상태 확인: ${YELLOW}docker ps${NC}"
-    echo -e "  3. 서비스 설치 계속..."
+    echo -e "  3. 서비스 상태 확인: ${YELLOW}docker-compose ps${NC}"
 }
 
 # 스크립트 실행

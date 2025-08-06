@@ -1,0 +1,5 @@
+[33m47d3b06[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Fix input handling issues in Supabase installer - Update version to 250807070929
+[33m4362695[m 0325
+[33mc209a05[m ve
+[33m29a85fe[m tnwjd
+[33me65c83c[m Add modularized Supabase LXC installer
