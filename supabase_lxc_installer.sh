@@ -289,12 +289,22 @@ prompt_input() {
     
     while true; do
         if [ -n "$default_value" ]; then
-            printf "%s [기본값: %s]: " "$prompt_text" "$default_value"
+            printf "%s [default: %s]: " "$prompt_text" "$default_value"
         else
             printf "%s: " "$prompt_text"
         fi
         
-        read -r input_value
+        # read 명령어에 타임아웃 추가 (30초)
+        if ! read -r -t 30 input_value; then
+            if [ -n "$default_value" ]; then
+                log "DEBUG" "Read timeout, using default value: $default_value"
+                printf "%s\n" "$default_value"
+                return 0
+            else
+                log "ERROR" "Read timeout and no default value provided"
+                return 1
+            fi
+        fi
         
         # 빈 입력시 기본값 사용
         if [ -z "$input_value" ] && [ -n "$default_value" ]; then
@@ -307,7 +317,7 @@ prompt_input() {
                 printf "%s\n" "$input_value"
                 return 0
             else
-                echo "잘못된 입력값입니다. 다시 입력해주세요." >&2
+                echo "Invalid input. Please try again." >&2
                 continue
             fi
         else
@@ -326,12 +336,25 @@ collect_lxc_settings() {
     local max_attempts=1000
     local attempts=0
     
+    log "DEBUG" "Searching for available container ID starting from $next_id"
+    
+    # pct 명령어가 사용 가능한지 확인
+    if ! command -v pct >/dev/null 2>&1; then
+        log "ERROR" "pct command not found. This script must be run on Proxmox VE."
+        exit 1
+    fi
+    
     while [ $attempts -lt $max_attempts ]; do
+        # pct status 명령어가 실패하면 해당 ID가 사용 가능한 것으로 간주
         if ! pct status "$next_id" >/dev/null 2>&1; then
+            log "DEBUG" "Found available container ID: $next_id"
             break
         fi
         ((next_id++))
         ((attempts++))
+        if [ $((attempts % 100)) -eq 0 ]; then
+            log "DEBUG" "Checked $attempts IDs, current: $next_id"
+        fi
     done
     
     if [ $attempts -ge $max_attempts ]; then
@@ -339,17 +362,57 @@ collect_lxc_settings() {
         exit 1
     fi
     
+    log "DEBUG" "Starting user input collection"
+    
     # 한글 프롬프트를 영문으로 변경
+    log "INFO" "Please enter the following information (press Enter for defaults):"
+    
     LXC_ID=$(prompt_input "Container ID" "$next_id" "")
+    if [ -z "$LXC_ID" ]; then
+        log "ERROR" "Container ID cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "Container ID set to: $LXC_ID"
+    
     LXC_NAME=$(prompt_input "Container Name" "supabase-dev" "")
+    if [ -z "$LXC_NAME" ]; then
+        log "ERROR" "Container Name cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "Container Name set to: $LXC_NAME"
+    
     LXC_MEMORY=$(prompt_input "Memory Size (MB)" "4096" "validate_memory")
+    if [ -z "$LXC_MEMORY" ]; then
+        log "ERROR" "Memory Size cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "Memory set to: $LXC_MEMORY"
+    
     LXC_CORES=$(prompt_input "CPU Cores" "2" "validate_cpu_cores")
+    if [ -z "$LXC_CORES" ]; then
+        log "ERROR" "CPU Cores cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "CPU Cores set to: $LXC_CORES"
+    
     LXC_DISK=$(prompt_input "Disk Size (GB)" "20" "validate_disk_size")
+    if [ -z "$LXC_DISK" ]; then
+        log "ERROR" "Disk Size cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "Disk Size set to: $LXC_DISK"
     
     # 사용 가능한 스토리지 풀 표시
     echo -e "\n${YELLOW}Available Storage Pools:${NC}"
-    pvesm status | grep -E "^[a-zA-Z]" | awk '{print "  - " $1 " (" $2 ")"}'
+    if ! pvesm status | grep -E "^[a-zA-Z]" | awk '{print "  - " $1 " (" $2 ")"}'; then
+        log "WARN" "Failed to get storage pools, using default"
+    fi
     LXC_STORAGE=$(prompt_input "Storage Pool" "local-lvm" "")
+    if [ -z "$LXC_STORAGE" ]; then
+        log "ERROR" "Storage Pool cannot be empty"
+        exit 1
+    fi
+    log "DEBUG" "Storage Pool set to: $LXC_STORAGE"
     
     log "INFO" "LXC 설정 완료: ID=$LXC_ID, 이름=$LXC_NAME, 메모리=${LXC_MEMORY}MB, CPU=${LXC_CORES}코어, 디스크=${LXC_DISK}GB"
 }
