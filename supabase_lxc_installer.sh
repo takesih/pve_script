@@ -3,10 +3,15 @@
 # Supabase LXC Auto Installer for Proxmox VE
 # 이 스크립트는 Proxmox VE 환경에서 LXC 컨테이너에 Docker, Dockge, CloudCmd, Supabase를 자동 설치합니다.
 
+echo "=================================="
+echo "Supabase LXC Auto Installer for Proxmox VE"
+echo "V 241208174500"
+echo "=================================="
+
 set -euo pipefail  # 오류 발생 시 스크립트 중단
 
 # 전역 변수
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TEMP_DIR="/tmp/supabase_installer"
 LOG_FILE="/var/log/supabase_installer.log"
 
@@ -3745,6 +3750,6 @@ main() {
 }
 
 # 스크립트 실행
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
     main "$@"
 fi
