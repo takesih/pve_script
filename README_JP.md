@@ -61,7 +61,44 @@ DNSZIサービスのためのDDNS自動更新を設定するスクリプトで�
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
+### 4. Supabase LXC自動インストールツール ⚠️ **テスト段階**
 
+> **⚠️ 警告：このスクリプトは現在テスト段階です。本番環境では使用しないでください！**
+> 
+> テスト目的でのみ使用してください。データ損失やシステム問題が発生する可能性があります。
+
+Proxmox VEのLXCコンテナにSupabase開発環境を自動インストールするスクリプトです。
+
+**インストールされるサービス：**
+- **Docker & Docker Compose**：コンテナランタイム環境
+- **Dockge**（ポート5001）：Docker Composeスタック Web管理ツール
+- **CloudCmd**（ポート8000）：Webベースファイルマネージャー
+- **Supabase**（ポート3001, 8001）：オープンソースFirebase代替
+
+**主な機能：**
+- **完全自動化**：対話式設定でワンクリックインストール
+- **最新バージョン**：すべてのコンポーネントの最新バージョンを自動インストール
+- **セキュリティ強化**：ファイアウォール、fail2ban、ファイル権限の自動設定
+- **統合テスト**：インストール後の自動検証とステータス確認
+- **詳細ログ**：完全なインストールプロセスログとトラブルシューティングガイド
+
+**システム要件：**
+- Proxmox VE 7.0以上
+- 最小8GB RAM（推奨）
+- 最小50GBディスク容量（推奨）
+- インターネット接続必須
+
+**実行方法：**
+```bash
+# ⚠️ テスト環境でのみ使用してください！
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/supabase_lxc_installer.sh)"
+```
+
+**インストール後のアクセス：**
+- Dockge管理パネル：`http://コンテナIP:5001`
+- CloudCmdファイル管理：`http://コンテナIP:8000`
+- Supabase Studio：`http://コンテナIP:3001`
+- Supabase API：`http://コンテナIP:8001`
 
 ### 5. Proxmox ISOカスタマイズツール
 Proxmox 8.4 ISOにRealtek R8168ネットワークカードドライバーを統合するスクリプトです。

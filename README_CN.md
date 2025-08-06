@@ -61,7 +61,44 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
+### 4. Supabase LXC自动安装工具 ⚠️ **测试阶段**
 
+> **⚠️ 警告：此脚本目前处于测试阶段。请勿在生产环境中使用！**
+> 
+> 仅用于测试目的，可能会发生数据丢失或系统问题。
+
+在Proxmox VE的LXC容器中自动安装Supabase开发环境的脚本。
+
+**安装的服务：**
+- **Docker & Docker Compose**：容器运行时环境
+- **Dockge**（端口5001）：Docker Compose堆栈Web管理工具
+- **CloudCmd**（端口8000）：基于Web的文件管理器
+- **Supabase**（端口3001, 8001）：开源Firebase替代方案
+
+**主要功能：**
+- **完全自动化**：通过交互式设置一键安装
+- **最新版本**：自动安装最新组件版本
+- **安全增强**：自动防火墙、fail2ban、文件权限设置
+- **集成测试**：安装后自动验证和状态检查
+- **详细日志**：完整安装过程日志和故障排除指南
+
+**系统要求：**
+- Proxmox VE 7.0或更高版本
+- 最少8GB RAM（推荐）
+- 最少50GB磁盘空间（推荐）
+- 需要互联网连接
+
+**执行方法：**
+```bash
+# ⚠️ 仅在测试环境中使用！
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/supabase_lxc_installer.sh)"
+```
+
+**安装后访问：**
+- Dockge管理面板：`http://容器IP:5001`
+- CloudCmd文件管理：`http://容器IP:8000`
+- Supabase Studio：`http://容器IP:3001`
+- Supabase API：`http://容器IP:8001`
 
 ### 5. Proxmox ISO定制工具
 将Realtek R8168网卡驱动程序集成到Proxmox 8.4 ISO中的脚本。

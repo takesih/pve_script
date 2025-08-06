@@ -61,7 +61,44 @@ Script to configure DDNS automatic update for DNSZI service.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
+### 4. Supabase LXC Auto Installer ⚠️ **Testing Phase**
 
+> **⚠️ Warning: This script is currently in testing phase. Do not use in production environment!**
+> 
+> Use for testing purposes only. Data loss or system issues may occur.
+
+Script to automatically install Supabase development environment in LXC container on Proxmox VE.
+
+**Installed Services:**
+- **Docker & Docker Compose**: Container runtime environment
+- **Dockge** (Port 5001): Docker Compose stack web management tool
+- **CloudCmd** (Port 8000): Web-based file manager
+- **Supabase** (Port 3001, 8001): Open-source Firebase alternative
+
+**Key Features:**
+- **Fully Automated**: One-click installation with interactive setup
+- **Latest Versions**: Automatic installation of latest component versions
+- **Security Enhanced**: Automatic firewall, fail2ban, file permission setup
+- **Integration Testing**: Automatic verification and status check after installation
+- **Detailed Logging**: Complete installation process logging and troubleshooting guide
+
+**System Requirements:**
+- Proxmox VE 7.0 or higher
+- Minimum 8GB RAM (recommended)
+- Minimum 50GB disk space (recommended)
+- Internet connection required
+
+**Execution:**
+```bash
+# ⚠️ Use only in testing environment!
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/supabase_lxc_installer.sh)"
+```
+
+**Access After Installation:**
+- Dockge Management Panel: `http://ContainerIP:5001`
+- CloudCmd File Manager: `http://ContainerIP:8000`
+- Supabase Studio: `http://ContainerIP:3001`
+- Supabase API: `http://ContainerIP:8001`
 
 ### 5. Proxmox ISO Customization Tool
 Script to integrate Realtek R8168 network card driver into Proxmox 8.4 ISO.

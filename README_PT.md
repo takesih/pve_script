@@ -61,7 +61,46 @@ Script para configurar a atualização automática DDNS para o serviço DNSZI.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Ferramenta de Configuração de Tamanho LVM-Thin ⚠️ **EM TESTE - NÃO USAR**
+### 4. Instalador Automático Supabase LXC ⚠️ **Fase de Teste**
+
+> **⚠️ Aviso: Este script está atualmente em fase de teste. Não usar em ambiente de produção!**
+> 
+> Usar apenas para fins de teste. Pode ocorrer perda de dados ou problemas no sistema.
+
+Script para instalar automaticamente o ambiente de desenvolvimento Supabase em um contêiner LXC no Proxmox VE.
+
+**Serviços Instalados:**
+- **Docker & Docker Compose**: Ambiente de execução de contêineres
+- **Dockge** (Porta 5001): Ferramenta de gerenciamento web de stacks Docker Compose
+- **CloudCmd** (Porta 8000): Gerenciador de arquivos baseado na web
+- **Supabase** (Porta 3001, 8001): Alternativa open-source ao Firebase
+
+**Recursos Principais:**
+- **Totalmente Automatizado**: Instalação com um clique com configuração interativa
+- **Versões Mais Recentes**: Instalação automática das versões mais recentes dos componentes
+- **Segurança Aprimorada**: Configuração automática de firewall, fail2ban, permissões de arquivo
+- **Testes de Integração**: Verificação automática e verificação de status após instalação
+- **Log Detalhado**: Log completo do processo de instalação e guia de solução de problemas
+
+**Requisitos do Sistema:**
+- Proxmox VE 7.0 ou superior
+- Mínimo 8GB RAM (recomendado)
+- Mínimo 50GB espaço em disco (recomendado)
+- Conexão com internet necessária
+
+**Execução:**
+```bash
+# ⚠️ Usar apenas em ambiente de teste!
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/supabase_lxc_installer.sh)"
+```
+
+**Acesso Após Instalação:**
+- Painel de Gerenciamento Dockge: `http://IP-Contêiner:5001`
+- Gerenciador de Arquivos CloudCmd: `http://IP-Contêiner:8000`
+- Supabase Studio: `http://IP-Contêiner:3001`
+- Supabase API: `http://IP-Contêiner:8001`
+
+### 5. Ferramenta de Configuração de Tamanho LVM-Thin ⚠️ **EM TESTE - NÃO USAR**
 Script para redimensionar diretórios LVM e LVM-thin após a instalação do Proxmox.
 
 **⚠️ AVISO: Este script está atualmente em teste e pode destruir seu sistema. NÃO USE!**

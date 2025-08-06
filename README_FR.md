@@ -61,7 +61,46 @@ Script pour configurer la mise à jour automatique DDNS pour le service DNSZI.
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/dnszi_ddns_setup.sh)"
 ```
 
-### 4. Outil de Configuration de Taille LVM-Thin ⚠️ **EN TEST - NE PAS UTILISER**
+### 4. Installateur Automatique Supabase LXC ⚠️ **Phase de Test**
+
+> **⚠️ Avertissement : Ce script est actuellement en phase de test. Ne pas utiliser en environnement de production !**
+> 
+> Utiliser uniquement à des fins de test. Une perte de données ou des problèmes système peuvent survenir.
+
+Script pour installer automatiquement l'environnement de développement Supabase dans un conteneur LXC sur Proxmox VE.
+
+**Services Installés :**
+- **Docker & Docker Compose** : Environnement d'exécution de conteneurs
+- **Dockge** (Port 5001) : Outil de gestion web des stacks Docker Compose
+- **CloudCmd** (Port 8000) : Gestionnaire de fichiers basé sur le web
+- **Supabase** (Port 3001, 8001) : Alternative open-source à Firebase
+
+**Fonctionnalités Principales :**
+- **Entièrement Automatisé** : Installation en un clic avec configuration interactive
+- **Dernières Versions** : Installation automatique des dernières versions des composants
+- **Sécurité Renforcée** : Configuration automatique du pare-feu, fail2ban, permissions de fichiers
+- **Tests d'Intégration** : Vérification automatique et contrôle d'état après installation
+- **Journalisation Détaillée** : Journalisation complète du processus d'installation et guide de dépannage
+
+**Exigences Système :**
+- Proxmox VE 7.0 ou supérieur
+- Minimum 8GB RAM (recommandé)
+- Minimum 50GB d'espace disque (recommandé)
+- Connexion Internet requise
+
+**Exécution :**
+```bash
+# ⚠️ Utiliser uniquement en environnement de test !
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/takesih/pve_script/main/supabase_lxc_installer.sh)"
+```
+
+**Accès Après Installation :**
+- Panneau de Gestion Dockge : `http://IP-Conteneur:5001`
+- Gestionnaire de Fichiers CloudCmd : `http://IP-Conteneur:8000`
+- Supabase Studio : `http://IP-Conteneur:3001`
+- Supabase API : `http://IP-Conteneur:8001`
+
+### 5. Outil de Configuration de Taille LVM-Thin ⚠️ **EN TEST - NE PAS UTILISER**
 Script pour redimensionner les répertoires LVM et LVM-thin après l'installation de Proxmox.
 
 **⚠️ AVERTISSEMENT : Ce script est actuellement en test et peut détruire votre système. NE L'UTILISEZ PAS !**
