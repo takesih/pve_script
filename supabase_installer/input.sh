@@ -45,39 +45,109 @@ collect_lxc_settings() {
     log "DEBUG" "Starting user input collection"
     log "INFO" "Please enter the following information (press Enter for defaults):"
     
-    LXC_ID=$(prompt_input "Container ID" "$next_id" "")
-    if [ -z "$LXC_ID" ]; then
-        log "ERROR" "Container ID cannot be empty"
-        exit 1
-    fi
+    # Container ID 입력
+    while true; do
+        printf "Container ID [default: %s]: " "$next_id"
+        if ! read -r LXC_ID; then
+            LXC_ID="$next_id"
+            break
+        fi
+        
+        if [ -z "$LXC_ID" ]; then
+            LXC_ID="$next_id"
+            break
+        fi
+        
+        if [[ "$LXC_ID" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            echo "Invalid input. Please enter a number."
+        fi
+    done
     log "DEBUG" "Container ID set to: $LXC_ID"
     
-    LXC_NAME=$(prompt_input "Container Name" "supabase-dev" "")
-    if [ -z "$LXC_NAME" ]; then
-        log "ERROR" "Container Name cannot be empty"
-        exit 1
-    fi
+    # Container Name 입력
+    while true; do
+        printf "Container Name [default: supabase-dev]: "
+        if ! read -r LXC_NAME; then
+            LXC_NAME="supabase-dev"
+            break
+        fi
+        
+        if [ -z "$LXC_NAME" ]; then
+            LXC_NAME="supabase-dev"
+            break
+        fi
+        
+        if [[ "$LXC_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            break
+        else
+            echo "Invalid input. Please use only letters, numbers, hyphens, and underscores."
+        fi
+    done
     log "DEBUG" "Container Name set to: $LXC_NAME"
     
-    LXC_MEMORY=$(prompt_input "Memory Size (MB)" "$DEFAULT_LXC_MEMORY" "validate_memory")
-    if [ -z "$LXC_MEMORY" ]; then
-        log "ERROR" "Memory Size cannot be empty"
-        exit 1
-    fi
+    # Memory 입력
+    while true; do
+        printf "Memory Size (MB) [default: %s]: " "$DEFAULT_LXC_MEMORY"
+        if ! read -r LXC_MEMORY; then
+            LXC_MEMORY="$DEFAULT_LXC_MEMORY"
+            break
+        fi
+        
+        if [ -z "$LXC_MEMORY" ]; then
+            LXC_MEMORY="$DEFAULT_LXC_MEMORY"
+            break
+        fi
+        
+        if validate_memory "$LXC_MEMORY"; then
+            break
+        else
+            echo "Invalid input. Please enter a number >= 1024."
+        fi
+    done
     log "DEBUG" "Memory set to: $LXC_MEMORY"
     
-    LXC_CORES=$(prompt_input "CPU Cores" "$DEFAULT_LXC_CORES" "validate_cpu_cores")
-    if [ -z "$LXC_CORES" ]; then
-        log "ERROR" "CPU Cores cannot be empty"
-        exit 1
-    fi
+    # CPU Cores 입력
+    while true; do
+        printf "CPU Cores [default: %s]: " "$DEFAULT_LXC_CORES"
+        if ! read -r LXC_CORES; then
+            LXC_CORES="$DEFAULT_LXC_CORES"
+            break
+        fi
+        
+        if [ -z "$LXC_CORES" ]; then
+            LXC_CORES="$DEFAULT_LXC_CORES"
+            break
+        fi
+        
+        if validate_cpu_cores "$LXC_CORES"; then
+            break
+        else
+            echo "Invalid input. Please enter a number >= 1."
+        fi
+    done
     log "DEBUG" "CPU Cores set to: $LXC_CORES"
     
-    LXC_DISK=$(prompt_input "Disk Size (GB)" "$DEFAULT_LXC_DISK" "validate_disk_size")
-    if [ -z "$LXC_DISK" ]; then
-        log "ERROR" "Disk Size cannot be empty"
-        exit 1
-    fi
+    # Disk Size 입력
+    while true; do
+        printf "Disk Size (GB) [default: %s]: " "$DEFAULT_LXC_DISK"
+        if ! read -r LXC_DISK; then
+            LXC_DISK="$DEFAULT_LXC_DISK"
+            break
+        fi
+        
+        if [ -z "$LXC_DISK" ]; then
+            LXC_DISK="$DEFAULT_LXC_DISK"
+            break
+        fi
+        
+        if validate_disk_size "$LXC_DISK"; then
+            break
+        else
+            echo "Invalid input. Please enter a number >= 10."
+        fi
+    done
     log "DEBUG" "Disk Size set to: $LXC_DISK"
     
     # 사용 가능한 스토리지 풀 표시
@@ -85,11 +155,24 @@ collect_lxc_settings() {
     if ! pvesm status | grep -E "^[a-zA-Z]" | awk '{print "  - " $1 " (" $2 ")"}'; then
         log "WARN" "Failed to get storage pools, using default"
     fi
-    LXC_STORAGE=$(prompt_input "Storage Pool" "$DEFAULT_LXC_STORAGE" "")
-    if [ -z "$LXC_STORAGE" ]; then
-        log "ERROR" "Storage Pool cannot be empty"
-        exit 1
-    fi
+    
+    # Storage Pool 입력
+    while true; do
+        printf "Storage Pool [default: %s]: " "$DEFAULT_LXC_STORAGE"
+        if ! read -r LXC_STORAGE; then
+            LXC_STORAGE="$DEFAULT_LXC_STORAGE"
+            break
+        fi
+        
+        if [ -z "$LXC_STORAGE" ]; then
+            LXC_STORAGE="$DEFAULT_LXC_STORAGE"
+            break
+        fi
+        
+        if [ -n "$LXC_STORAGE" ]; then
+            break
+        fi
+    done
     log "DEBUG" "Storage Pool set to: $LXC_STORAGE"
     
     log "INFO" "LXC 설정 완료: ID=$LXC_ID, 이름=$LXC_NAME, 메모리=${LXC_MEMORY}MB, CPU=${LXC_CORES}코어, 디스크=${LXC_DISK}GB"
@@ -102,11 +185,24 @@ collect_network_settings() {
     # 사용 가능한 브리지 인터페이스 표시
     echo -e "\n${YELLOW}Available Bridge Interfaces:${NC}"
     ip link show | grep -E "^[0-9]+: vmbr" | awk -F': ' '{print "  - " $2}' | cut -d'@' -f1 || log "WARN" "Failed to get bridge interfaces"
-    LXC_BRIDGE=$(prompt_input "Bridge Interface" "$DEFAULT_LXC_BRIDGE" "")
-    if [ -z "$LXC_BRIDGE" ]; then
-        log "ERROR" "Bridge Interface cannot be empty"
-        exit 1
-    fi
+    
+    # Bridge Interface 입력
+    while true; do
+        printf "Bridge Interface [default: %s]: " "$DEFAULT_LXC_BRIDGE"
+        if ! read -r LXC_BRIDGE; then
+            LXC_BRIDGE="$DEFAULT_LXC_BRIDGE"
+            break
+        fi
+        
+        if [ -z "$LXC_BRIDGE" ]; then
+            LXC_BRIDGE="$DEFAULT_LXC_BRIDGE"
+            break
+        fi
+        
+        if [ -n "$LXC_BRIDGE" ]; then
+            break
+        fi
+    done
     
     echo -e "\n${YELLOW}IP Configuration Method:${NC}"
     echo "1) DHCP (Auto Assignment)"
@@ -129,29 +225,72 @@ collect_network_settings() {
                 break
                 ;;
             2)
-                LXC_IP=$(prompt_input "IP Address (e.g., 192.168.1.100/24)" "" "")
-                if [ -z "$LXC_IP" ]; then
-                    log "ERROR" "IP Address cannot be empty"
-                    exit 1
-                fi
-                LXC_GATEWAY=$(prompt_input "Gateway" "192.168.1.1" "validate_ip")
-                if [ -z "$LXC_GATEWAY" ]; then
-                    log "ERROR" "Gateway cannot be empty"
-                    exit 1
-                fi
+                # Static IP 입력
+                while true; do
+                    printf "IP Address (e.g., 192.168.1.100/24): "
+                    if ! read -r LXC_IP; then
+                        echo "IP Address is required for static configuration."
+                        continue
+                    fi
+                    
+                    if [ -z "$LXC_IP" ]; then
+                        echo "IP Address is required for static configuration."
+                        continue
+                    fi
+                    
+                    if [[ "$LXC_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+                        break
+                    else
+                        echo "Invalid IP format. Please use format: 192.168.1.100/24"
+                    fi
+                done
+                
+                # Gateway 입력
+                while true; do
+                    printf "Gateway [default: 192.168.1.1]: "
+                    if ! read -r LXC_GATEWAY; then
+                        LXC_GATEWAY="192.168.1.1"
+                        break
+                    fi
+                    
+                    if [ -z "$LXC_GATEWAY" ]; then
+                        LXC_GATEWAY="192.168.1.1"
+                        break
+                    fi
+                    
+                    if validate_ip "$LXC_GATEWAY"; then
+                        break
+                    else
+                        echo "Invalid gateway IP address."
+                    fi
+                done
                 break
                 ;;
             *)
-                log "ERROR" "Please select 1 or 2."
+                echo "Please select 1 or 2."
                 ;;
         esac
     done
     
-    LXC_DNS=$(prompt_input "DNS Server" "$DEFAULT_DNS" "validate_ip")
-    if [ -z "$LXC_DNS" ]; then
-        log "ERROR" "DNS Server cannot be empty"
-        exit 1
-    fi
+    # DNS 입력
+    while true; do
+        printf "DNS Server [default: %s]: " "$DEFAULT_DNS"
+        if ! read -r LXC_DNS; then
+            LXC_DNS="$DEFAULT_DNS"
+            break
+        fi
+        
+        if [ -z "$LXC_DNS" ]; then
+            LXC_DNS="$DEFAULT_DNS"
+            break
+        fi
+        
+        if validate_ip "$LXC_DNS"; then
+            break
+        else
+            echo "Invalid DNS IP address."
+        fi
+    done
     
     log "INFO" "네트워크 설정 완료: 브리지=$LXC_BRIDGE, IP=$LXC_IP, 게이트웨이=$LXC_GATEWAY, DNS=$LXC_DNS"
 }
@@ -160,35 +299,102 @@ collect_network_settings() {
 collect_service_settings() {
     log "INFO" "=== 서비스 포트 설정 ==="
     
-    DOCKGE_PORT=$(prompt_input "Dockge Port" "$DEFAULT_DOCKGE_PORT" "validate_port")
-    if [ -z "$DOCKGE_PORT" ]; then
-        log "ERROR" "Dockge Port cannot be empty"
-        exit 1
-    fi
+    # Dockge Port 입력
+    while true; do
+        printf "Dockge Port [default: %s]: " "$DEFAULT_DOCKGE_PORT"
+        if ! read -r DOCKGE_PORT; then
+            DOCKGE_PORT="$DEFAULT_DOCKGE_PORT"
+            break
+        fi
+        
+        if [ -z "$DOCKGE_PORT" ]; then
+            DOCKGE_PORT="$DEFAULT_DOCKGE_PORT"
+            break
+        fi
+        
+        if validate_port "$DOCKGE_PORT"; then
+            break
+        else
+            echo "Invalid port number. Please enter a number between 1 and 65535."
+        fi
+    done
     
-    CLOUDCMD_PORT=$(prompt_input "CloudCmd Port" "$DEFAULT_CLOUDCMD_PORT" "validate_port")
-    if [ -z "$CLOUDCMD_PORT" ]; then
-        log "ERROR" "CloudCmd Port cannot be empty"
-        exit 1
-    fi
+    # CloudCmd Port 입력
+    while true; do
+        printf "CloudCmd Port [default: %s]: " "$DEFAULT_CLOUDCMD_PORT"
+        if ! read -r CLOUDCMD_PORT; then
+            CLOUDCMD_PORT="$DEFAULT_CLOUDCMD_PORT"
+            break
+        fi
+        
+        if [ -z "$CLOUDCMD_PORT" ]; then
+            CLOUDCMD_PORT="$DEFAULT_CLOUDCMD_PORT"
+            break
+        fi
+        
+        if validate_port "$CLOUDCMD_PORT"; then
+            break
+        else
+            echo "Invalid port number. Please enter a number between 1 and 65535."
+        fi
+    done
     
-    SUPABASE_STUDIO_PORT=$(prompt_input "Supabase Studio Port" "$DEFAULT_SUPABASE_STUDIO_PORT" "validate_port")
-    if [ -z "$SUPABASE_STUDIO_PORT" ]; then
-        log "ERROR" "Supabase Studio Port cannot be empty"
-        exit 1
-    fi
+    # Supabase Studio Port 입력
+    while true; do
+        printf "Supabase Studio Port [default: %s]: " "$DEFAULT_SUPABASE_STUDIO_PORT"
+        if ! read -r SUPABASE_STUDIO_PORT; then
+            SUPABASE_STUDIO_PORT="$DEFAULT_SUPABASE_STUDIO_PORT"
+            break
+        fi
+        
+        if [ -z "$SUPABASE_STUDIO_PORT" ]; then
+            SUPABASE_STUDIO_PORT="$DEFAULT_SUPABASE_STUDIO_PORT"
+            break
+        fi
+        
+        if validate_port "$SUPABASE_STUDIO_PORT"; then
+            break
+        else
+            echo "Invalid port number. Please enter a number between 1 and 65535."
+        fi
+    done
     
     # 도메인 설정
     if [ "$LXC_IP" = "dhcp" ]; then
-        DOMAIN=$(prompt_input "Domain/Hostname (will be set later for DHCP)" "$DEFAULT_DOMAIN" "")
+        while true; do
+            printf "Domain/Hostname (will be set later for DHCP) [default: %s]: " "$DEFAULT_DOMAIN"
+            if ! read -r DOMAIN; then
+                DOMAIN="$DEFAULT_DOMAIN"
+                break
+            fi
+            
+            if [ -z "$DOMAIN" ]; then
+                DOMAIN="$DEFAULT_DOMAIN"
+                break
+            fi
+            
+            if [ -n "$DOMAIN" ]; then
+                break
+            fi
+        done
     else
         container_ip=$(echo "$LXC_IP" | cut -d'/' -f1)
-        DOMAIN=$(prompt_input "Domain/Hostname" "$container_ip" "")
-    fi
-    
-    if [ -z "$DOMAIN" ]; then
-        log "ERROR" "Domain/Hostname cannot be empty"
-        exit 1
+        while true; do
+            printf "Domain/Hostname [default: %s]: " "$container_ip"
+            if ! read -r DOMAIN; then
+                DOMAIN="$container_ip"
+                break
+            fi
+            
+            if [ -z "$DOMAIN" ]; then
+                DOMAIN="$container_ip"
+                break
+            fi
+            
+            if [ -n "$DOMAIN" ]; then
+                break
+            fi
+        done
     fi
     
     log "INFO" "서비스 설정 완료: Dockge=$DOCKGE_PORT, CloudCmd=$CLOUDCMD_PORT, Supabase Studio=$SUPABASE_STUDIO_PORT"
@@ -201,7 +407,11 @@ collect_supabase_settings() {
     # 데이터베이스 비밀번호
     echo -e "\n${YELLOW}Set PostgreSQL database password.${NC}"
     echo "Leave empty to auto-generate a strong password."
-    POSTGRES_PASSWORD=$(prompt_input "PostgreSQL Password" "" "")
+    
+    printf "PostgreSQL Password: "
+    if ! read -r POSTGRES_PASSWORD; then
+        POSTGRES_PASSWORD=""
+    fi
     
     if [ -z "$POSTGRES_PASSWORD" ]; then
         POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
@@ -224,12 +434,43 @@ collect_supabase_settings() {
     echo -e "\n${YELLOW}SMTP Email Settings (Optional)${NC}"
     echo "Enter SMTP settings for email authentication. Press Enter to skip."
     
-    smtp_host=$(prompt_input "SMTP Host" "" "")
+    printf "SMTP Host: "
+    if ! read -r smtp_host; then
+        smtp_host=""
+    fi
+    
     if [ -n "$smtp_host" ]; then
         SMTP_HOST=$smtp_host
-        SMTP_PORT=$(prompt_input "SMTP Port" "587" "validate_port")
-        SMTP_USER=$(prompt_input "SMTP Username" "" "")
-        SMTP_PASS=$(prompt_input "SMTP Password" "" "")
+        
+        # SMTP Port 입력
+        while true; do
+            printf "SMTP Port [default: 587]: "
+            if ! read -r SMTP_PORT; then
+                SMTP_PORT="587"
+                break
+            fi
+            
+            if [ -z "$SMTP_PORT" ]; then
+                SMTP_PORT="587"
+                break
+            fi
+            
+            if validate_port "$SMTP_PORT"; then
+                break
+            else
+                echo "Invalid port number. Please enter a number between 1 and 65535."
+            fi
+        done
+        
+        printf "SMTP Username: "
+        if ! read -r SMTP_USER; then
+            SMTP_USER=""
+        fi
+        
+        printf "SMTP Password: "
+        if ! read -r SMTP_PASS; then
+            SMTP_PASS=""
+        fi
     fi
     
     log "INFO" "Supabase 환경변수 설정 완료"

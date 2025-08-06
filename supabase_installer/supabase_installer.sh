@@ -76,7 +76,7 @@ fi
 # 스크립트 시작
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 250807070315"
+echo "V 250807070929"
 echo "=================================="
 
 # 오류 처리 설정
