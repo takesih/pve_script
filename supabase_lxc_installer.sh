@@ -5,7 +5,7 @@
 
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 241208175200"
+echo "V 241208175800"
 echo "=================================="
 
 set -euo pipefail  # 오류 발생 시 스크립트 중단
@@ -177,10 +177,13 @@ check_system_resources() {
         log "WARN" "시스템 메모리가 부족할 수 있습니다. (현재: ${total_memory}MB, 권장: 8192MB 이상)"
     fi
     
-    # 디스크 공간 확인 (최소 50GB 권장)
+    # 디스크 공간 확인 (최소 20GB 권장)
     local available_space=$(df / | awk 'NR==2 {print int($4/1024/1024)}')
-    if [ "$available_space" -lt 50 ]; then
-        log "WARN" "디스크 공간이 부족할 수 있습니다. (현재: ${available_space}GB, 권장: 50GB 이상)"
+    if [ "$available_space" -lt 20 ]; then
+        log "WARN" "디스크 공간이 부족할 수 있습니다. (현재: ${available_space}GB, 권장: 20GB 이상)"
+        log "WARN" "계속 진행하시겠습니까? 공간 부족으로 설치가 실패할 수 있습니다."
+    elif [ "$available_space" -lt 50 ]; then
+        log "WARN" "디스크 공간이 권장 사양보다 적습니다. (현재: ${available_space}GB, 권장: 50GB 이상)"
     fi
     
     log "INFO" "시스템 리소스 확인 완료"
@@ -320,9 +323,21 @@ collect_lxc_settings() {
     
     # 사용 가능한 컨테이너 ID 찾기
     local next_id=100
-    while pct status $next_id &>/dev/null; do
+    local max_attempts=1000
+    local attempts=0
+    
+    while [ $attempts -lt $max_attempts ]; do
+        if ! pct status $next_id &>/dev/null; then
+            break
+        fi
         ((next_id++))
+        ((attempts++))
     done
+    
+    if [ $attempts -ge $max_attempts ]; then
+        log "ERROR" "사용 가능한 컨테이너 ID를 찾을 수 없습니다."
+        exit 1
+    fi
     
     LXC_ID=$(prompt_input "컨테이너 ID" "$next_id" "")
     LXC_NAME=$(prompt_input "컨테이너 이름" "supabase-dev" "")
