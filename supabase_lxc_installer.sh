@@ -5,10 +5,10 @@
 
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 241208175800"
+echo "V 241208180500"
 echo "=================================="
 
-set -euo pipefail  # 오류 발생 시 스크립트 중단
+set -e  # 오류 발생 시 스크립트 중단 (pipefail 제거로 안정성 향상)
 
 # 전역 변수
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -404,7 +404,7 @@ collect_service_settings() {
     if [ "$LXC_IP" = "dhcp" ]; then
         DOMAIN=$(prompt_input "도메인/호스트명 (DHCP 사용시 나중에 설정)" "localhost" "")
     else
-        local container_ip=$(echo "$LXC_IP" | cut -d'/' -f1)
+        container_ip=$(echo "$LXC_IP" | cut -d'/' -f1)
         DOMAIN=$(prompt_input "도메인/호스트명" "$container_ip" "")
     fi
     
@@ -441,7 +441,7 @@ collect_supabase_settings() {
     echo -e "\n${YELLOW}SMTP 이메일 설정 (선택사항)${NC}"
     echo "이메일 인증 기능을 사용하려면 SMTP 설정을 입력하세요. 건너뛰려면 Enter를 누르세요."
     
-    local smtp_host=$(prompt_input "SMTP 호스트" "" "")
+    smtp_host=$(prompt_input "SMTP 호스트" "" "")
     if [ -n "$smtp_host" ]; then
         SMTP_HOST=$smtp_host
         SMTP_PORT=$(prompt_input "SMTP 포트" "587" "validate_port")
