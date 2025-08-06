@@ -6,11 +6,71 @@
 # 스크립트 디렉토리 설정
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-# 설정 파일과 유틸리티 로드
-source "$SCRIPT_DIR/config.sh"
-source "$SCRIPT_DIR/utils.sh"
-source "$SCRIPT_DIR/input.sh"
-source "$SCRIPT_DIR/docker.sh"
+# 원격 실행 여부 확인
+if [[ "${BASH_SOURCE[0]}" == *"curl"* ]] || [[ "${BASH_SOURCE[0]}" == *"wget"* ]]; then
+    # 원격 실행인 경우 임시 디렉토리 생성
+    TEMP_SCRIPT_DIR="/tmp/supabase_installer_scripts"
+    mkdir -p "$TEMP_SCRIPT_DIR"
+    cd "$TEMP_SCRIPT_DIR"
+    
+    # 필요한 모듈들을 다운로드
+    log() {
+        local level=$1
+        shift
+        local message="$*"
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        case $level in
+            "INFO")
+                echo -e "\033[0;32m[INFO]\033[0m $message"
+                ;;
+            "WARN")
+                echo -e "\033[1;33m[WARN]\033[0m $message"
+                ;;
+            "ERROR")
+                echo -e "\033[0;31m[ERROR]\033[0m $message"
+                ;;
+            "DEBUG")
+                echo -e "\033[0;34m[DEBUG]\033[0m $message"
+                ;;
+        esac
+    }
+    
+    # 모듈 다운로드 함수
+    download_module() {
+        local module_name="$1"
+        local module_url="https://raw.githubusercontent.com/takesih/pve_script/main/supabase_installer/$module_name"
+        
+        if curl -fsSL "$module_url" -o "$module_name"; then
+            log "INFO" "모듈 다운로드 완료: $module_name"
+            return 0
+        else
+            log "ERROR" "모듈 다운로드 실패: $module_name"
+            return 1
+        fi
+    }
+    
+    # 필요한 모듈들 다운로드
+    log "INFO" "필요한 모듈들을 다운로드하는 중..."
+    for module in config.sh utils.sh input.sh docker.sh; do
+        if ! download_module "$module"; then
+            log "ERROR" "모듈 다운로드에 실패했습니다: $module"
+            exit 1
+        fi
+    done
+    
+    # 모듈들 로드
+    source "$TEMP_SCRIPT_DIR/config.sh"
+    source "$TEMP_SCRIPT_DIR/utils.sh"
+    source "$TEMP_SCRIPT_DIR/input.sh"
+    source "$TEMP_SCRIPT_DIR/docker.sh"
+else
+    # 로컬 실행인 경우
+    source "$SCRIPT_DIR/config.sh"
+    source "$SCRIPT_DIR/utils.sh"
+    source "$SCRIPT_DIR/input.sh"
+    source "$SCRIPT_DIR/docker.sh"
+fi
 
 # 스크립트 시작
 echo "=================================="
