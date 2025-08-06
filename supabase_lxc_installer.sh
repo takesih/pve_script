@@ -5,7 +5,7 @@
 
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 241208174500"
+echo "V 241208175200"
 echo "=================================="
 
 set -euo pipefail  # 오류 발생 시 스크립트 중단
@@ -124,15 +124,25 @@ check_proxmox_environment() {
     local pve_version=$(pveversion | head -n1 | cut -d'/' -f2)
     log "INFO" "Proxmox VE 버전: $pve_version"
     
-    # 필수 명령어 확인
+    # 필수 명령어 확인 및 자동 설치
     local required_commands=("curl" "wget" "tar" "unzip")
+    local missing_commands=()
+    
     for cmd in "${required_commands[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
-            log "ERROR" "필수 명령어가 누락되었습니다: $cmd"
-            log "INFO" "다음 명령어로 설치하세요: apt update && apt install -y $cmd"
-            exit 1
+            missing_commands+=("$cmd")
         fi
     done
+    
+    if [ ${#missing_commands[@]} -gt 0 ]; then
+        log "INFO" "누락된 필수 명령어들을 자동 설치합니다: ${missing_commands[*]}"
+        if ! apt update && apt install -y "${missing_commands[@]}"; then
+            log "ERROR" "필수 패키지 설치에 실패했습니다: ${missing_commands[*]}"
+            log "INFO" "수동으로 설치하세요: apt update && apt install -y ${missing_commands[*]}"
+            exit 1
+        fi
+        log "INFO" "필수 패키지 설치 완료: ${missing_commands[*]}"
+    fi
     
     log "INFO" "Proxmox VE 환경 확인 완료"
 }
@@ -1383,8 +1393,8 @@ cleanup_on_error() {
     log "ERROR" "오류가 발생했습니다. 임시 파일을 정리합니다..."
     cleanup_temp_files_enhanced
     
-    # 생성된 컨테이너가 있다면 정리 옵션 제공
-    if [ -n "$LXC_ID" ] && pct status "$LXC_ID" &>/dev/null; then
+    # 생성된 컨테이너가 있다면 정리 옵션 제공 (LXC_ID가 비어있지 않고 숫자인 경우만)
+    if [ -n "$LXC_ID" ] && [[ "$LXC_ID" =~ ^[0-9]+$ ]] && pct status "$LXC_ID" &>/dev/null; then
         echo -e "\n${YELLOW}생성된 LXC 컨테이너 (ID: $LXC_ID)를 삭제하시겠습니까?${NC}"
         echo -ne "${BLUE}컨테이너 삭제 [y/N]${NC}: "
         read -r cleanup_container
