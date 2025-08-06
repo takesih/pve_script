@@ -5,7 +5,7 @@
 
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 250807063848"
+echo "V 250807064448"
 echo "=================================="
 
 set -e  # 오류 발생 시 스크립트 중단 (pipefail 제거로 안정성 향상)
