@@ -196,4 +196,30 @@ check_network_connectivity() {
     
     log "INFO" "네트워크 연결 확인 완료"
     return 0
+}
+
+# 전역 오류 처리 함수
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+    local command="$2"
+    
+    log "ERROR" "스크립트 실행 중 오류가 발생했습니다."
+    log "ERROR" "종료 코드: $exit_code"
+    log "ERROR" "오류 발생 라인: $line_number"
+    log "ERROR" "실행된 명령어: $command"
+    
+    # 스택 트레이스 출력
+    log "ERROR" "호출 스택:"
+    local frame=0
+    while caller $frame; do
+        ((frame++))
+    done | while read line func file; do
+        log "ERROR" "  $file:$line $func()"
+    done
+    
+    # 오류 발생 시 정리 작업
+    cleanup_on_error
+    
+    exit $exit_code
 } 

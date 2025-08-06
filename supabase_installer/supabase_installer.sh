@@ -6,14 +6,14 @@
 # 스크립트 디렉토리 설정
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-# 원격 실행 여부 확인
-if [[ "${BASH_SOURCE[0]}" == *"curl"* ]] || [[ "${BASH_SOURCE[0]}" == *"wget"* ]]; then
-    # 원격 실행인 경우 임시 디렉토리 생성
+# 원격 실행 여부 확인 및 모듈 다운로드
+if [[ "${BASH_SOURCE[0]}" == *"curl"* ]] || [[ "${BASH_SOURCE[0]}" == *"wget"* ]] || [[ ! -f "$SCRIPT_DIR/config.sh" ]]; then
+    # 원격 실행이거나 로컬 모듈이 없는 경우 임시 디렉토리 생성
     TEMP_SCRIPT_DIR="/tmp/supabase_installer_scripts"
     mkdir -p "$TEMP_SCRIPT_DIR"
     cd "$TEMP_SCRIPT_DIR"
     
-    # 필요한 모듈들을 다운로드
+    # 로그 함수 정의
     log() {
         local level=$1
         shift
@@ -41,6 +41,7 @@ if [[ "${BASH_SOURCE[0]}" == *"curl"* ]] || [[ "${BASH_SOURCE[0]}" == *"wget"* ]
         local module_name="$1"
         local module_url="https://raw.githubusercontent.com/takesih/pve_script/main/supabase_installer/$module_name"
         
+        log "INFO" "모듈 다운로드 중: $module_name"
         if curl -fsSL "$module_url" -o "$module_name"; then
             log "INFO" "모듈 다운로드 완료: $module_name"
             return 0
@@ -75,7 +76,7 @@ fi
 # 스크립트 시작
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 250807070013"
+echo "V 250807070315"
 echo "=================================="
 
 # 오류 처리 설정

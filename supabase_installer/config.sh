@@ -7,7 +7,13 @@
 SCRIPT_VERSION="250807064448"
 
 # 기본 디렉토리
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# 원격 실행 시 임시 디렉토리 사용, 로컬 실행 시 현재 디렉토리 사용
+if [[ "${BASH_SOURCE[0]}" == *"curl"* ]] || [[ "${BASH_SOURCE[0]}" == *"wget"* ]] || [[ ! -f "$(dirname "${BASH_SOURCE[0]:-$0}")/config.sh" ]]; then
+    SCRIPT_DIR="/tmp/supabase_installer_scripts"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+fi
+
 TEMP_DIR="/tmp/supabase_installer"
 LOG_FILE="/var/log/supabase_installer.log"
 
