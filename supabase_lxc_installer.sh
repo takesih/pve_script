@@ -5,7 +5,7 @@
 
 echo "=================================="
 echo "Supabase LXC Auto Installer for Proxmox VE"
-echo "V 241208180500"
+echo "V 250807063848"
 echo "=================================="
 
 set -e  # 오류 발생 시 스크립트 중단 (pipefail 제거로 안정성 향상)
@@ -282,36 +282,36 @@ validate_cpu_cores() {
 
 # 사용자 입력 함수
 prompt_input() {
-    local prompt_text=$1
-    local default_value=$2
-    local validation_func=$3
-    local input_value
+    local prompt_text="$1"
+    local default_value="$2"
+    local validation_func="$3"
+    local input_value=""
     
     while true; do
         if [ -n "$default_value" ]; then
-            echo -ne "${BLUE}$prompt_text${NC} [기본값: $default_value]: "
+            printf "%s [기본값: %s]: " "$prompt_text" "$default_value"
         else
-            echo -ne "${BLUE}$prompt_text${NC}: "
+            printf "%s: " "$prompt_text"
         fi
         
         read -r input_value
         
         # 빈 입력시 기본값 사용
         if [ -z "$input_value" ] && [ -n "$default_value" ]; then
-            input_value=$default_value
+            input_value="$default_value"
         fi
         
         # 검증 함수가 있으면 검증 수행
-        if [ -n "$validation_func" ]; then
+        if [ -n "$validation_func" ] && [ "$validation_func" != "" ]; then
             if $validation_func "$input_value"; then
-                echo "$input_value"
+                printf "%s\n" "$input_value"
                 return 0
             else
-                log "ERROR" "잘못된 입력값입니다. 다시 입력해주세요."
+                echo "잘못된 입력값입니다. 다시 입력해주세요." >&2
                 continue
             fi
         else
-            echo "$input_value"
+            printf "%s\n" "$input_value"
             return 0
         fi
     done
@@ -327,7 +327,7 @@ collect_lxc_settings() {
     local attempts=0
     
     while [ $attempts -lt $max_attempts ]; do
-        if ! pct status $next_id &>/dev/null; then
+        if ! pct status "$next_id" >/dev/null 2>&1; then
             break
         fi
         ((next_id++))
@@ -339,16 +339,17 @@ collect_lxc_settings() {
         exit 1
     fi
     
-    LXC_ID=$(prompt_input "컨테이너 ID" "$next_id" "")
-    LXC_NAME=$(prompt_input "컨테이너 이름" "supabase-dev" "")
-    LXC_MEMORY=$(prompt_input "메모리 크기 (MB)" "4096" "validate_memory")
-    LXC_CORES=$(prompt_input "CPU 코어 수" "2" "validate_cpu_cores")
-    LXC_DISK=$(prompt_input "디스크 크기 (GB)" "20" "validate_disk_size")
+    # 한글 프롬프트를 영문으로 변경
+    LXC_ID=$(prompt_input "Container ID" "$next_id" "")
+    LXC_NAME=$(prompt_input "Container Name" "supabase-dev" "")
+    LXC_MEMORY=$(prompt_input "Memory Size (MB)" "4096" "validate_memory")
+    LXC_CORES=$(prompt_input "CPU Cores" "2" "validate_cpu_cores")
+    LXC_DISK=$(prompt_input "Disk Size (GB)" "20" "validate_disk_size")
     
     # 사용 가능한 스토리지 풀 표시
-    echo -e "\n${YELLOW}사용 가능한 스토리지 풀:${NC}"
+    echo -e "\n${YELLOW}Available Storage Pools:${NC}"
     pvesm status | grep -E "^[a-zA-Z]" | awk '{print "  - " $1 " (" $2 ")"}'
-    LXC_STORAGE=$(prompt_input "스토리지 풀" "local-lvm" "")
+    LXC_STORAGE=$(prompt_input "Storage Pool" "local-lvm" "")
     
     log "INFO" "LXC 설정 완료: ID=$LXC_ID, 이름=$LXC_NAME, 메모리=${LXC_MEMORY}MB, CPU=${LXC_CORES}코어, 디스크=${LXC_DISK}GB"
 }
@@ -358,17 +359,17 @@ collect_network_settings() {
     log "INFO" "=== 네트워크 설정 ==="
     
     # 사용 가능한 브리지 인터페이스 표시
-    echo -e "\n${YELLOW}사용 가능한 브리지 인터페이스:${NC}"
+    echo -e "\n${YELLOW}Available Bridge Interfaces:${NC}"
     ip link show | grep -E "^[0-9]+: vmbr" | awk -F': ' '{print "  - " $2}' | cut -d'@' -f1
-    LXC_BRIDGE=$(prompt_input "브리지 인터페이스" "vmbr0" "")
+    LXC_BRIDGE=$(prompt_input "Bridge Interface" "vmbr0" "")
     
-    echo -e "\n${YELLOW}IP 설정 방식을 선택하세요:${NC}"
-    echo "1) DHCP (자동 할당)"
-    echo "2) 고정 IP"
+    echo -e "\n${YELLOW}IP Configuration Method:${NC}"
+    echo "1) DHCP (Auto Assignment)"
+    echo "2) Static IP"
     
     local ip_choice
     while true; do
-        echo -ne "${BLUE}선택 [1-2]${NC}: "
+        printf "Select [1-2]: "
         read -r ip_choice
         case $ip_choice in
             1)
@@ -377,17 +378,17 @@ collect_network_settings() {
                 break
                 ;;
             2)
-                LXC_IP=$(prompt_input "IP 주소 (예: 192.168.1.100/24)" "" "")
-                LXC_GATEWAY=$(prompt_input "게이트웨이" "192.168.1.1" "validate_ip")
+                LXC_IP=$(prompt_input "IP Address (e.g., 192.168.1.100/24)" "" "")
+                LXC_GATEWAY=$(prompt_input "Gateway" "192.168.1.1" "validate_ip")
                 break
                 ;;
             *)
-                log "ERROR" "1 또는 2를 선택해주세요."
+                log "ERROR" "Please select 1 or 2."
                 ;;
         esac
     done
     
-    LXC_DNS=$(prompt_input "DNS 서버" "8.8.8.8" "validate_ip")
+    LXC_DNS=$(prompt_input "DNS Server" "8.8.8.8" "validate_ip")
     
     log "INFO" "네트워크 설정 완료: 브리지=$LXC_BRIDGE, IP=$LXC_IP, 게이트웨이=$LXC_GATEWAY, DNS=$LXC_DNS"
 }
@@ -396,16 +397,16 @@ collect_network_settings() {
 collect_service_settings() {
     log "INFO" "=== 서비스 포트 설정 ==="
     
-    DOCKGE_PORT=$(prompt_input "Dockge 포트" "5001" "validate_port")
-    CLOUDCMD_PORT=$(prompt_input "CloudCmd 포트" "8000" "validate_port")
-    SUPABASE_STUDIO_PORT=$(prompt_input "Supabase Studio 포트" "3001" "validate_port")
+    DOCKGE_PORT=$(prompt_input "Dockge Port" "5001" "validate_port")
+    CLOUDCMD_PORT=$(prompt_input "CloudCmd Port" "8000" "validate_port")
+    SUPABASE_STUDIO_PORT=$(prompt_input "Supabase Studio Port" "3001" "validate_port")
     
     # 도메인 설정
     if [ "$LXC_IP" = "dhcp" ]; then
-        DOMAIN=$(prompt_input "도메인/호스트명 (DHCP 사용시 나중에 설정)" "localhost" "")
+        DOMAIN=$(prompt_input "Domain/Hostname (will be set later for DHCP)" "localhost" "")
     else
         container_ip=$(echo "$LXC_IP" | cut -d'/' -f1)
-        DOMAIN=$(prompt_input "도메인/호스트명" "$container_ip" "")
+        DOMAIN=$(prompt_input "Domain/Hostname" "$container_ip" "")
     fi
     
     log "INFO" "서비스 설정 완료: Dockge=$DOCKGE_PORT, CloudCmd=$CLOUDCMD_PORT, Supabase Studio=$SUPABASE_STUDIO_PORT"
@@ -416,9 +417,9 @@ collect_supabase_settings() {
     log "INFO" "=== Supabase 환경변수 설정 ==="
     
     # 데이터베이스 비밀번호
-    echo -e "\n${YELLOW}PostgreSQL 데이터베이스 비밀번호를 설정하세요.${NC}"
-    echo "비어있으면 자동으로 강력한 비밀번호를 생성합니다."
-    POSTGRES_PASSWORD=$(prompt_input "PostgreSQL 비밀번호" "" "")
+    echo -e "\n${YELLOW}Set PostgreSQL database password.${NC}"
+    echo "Leave empty to auto-generate a strong password."
+    POSTGRES_PASSWORD=$(prompt_input "PostgreSQL Password" "" "")
     
     if [ -z "$POSTGRES_PASSWORD" ]; then
         POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
@@ -438,15 +439,15 @@ collect_supabase_settings() {
     SUPABASE_PUBLIC_URL="http://${DOMAIN}:8001"
     
     # SMTP 설정 (선택사항)
-    echo -e "\n${YELLOW}SMTP 이메일 설정 (선택사항)${NC}"
-    echo "이메일 인증 기능을 사용하려면 SMTP 설정을 입력하세요. 건너뛰려면 Enter를 누르세요."
+    echo -e "\n${YELLOW}SMTP Email Settings (Optional)${NC}"
+    echo "Enter SMTP settings for email authentication. Press Enter to skip."
     
-    smtp_host=$(prompt_input "SMTP 호스트" "" "")
+    smtp_host=$(prompt_input "SMTP Host" "" "")
     if [ -n "$smtp_host" ]; then
         SMTP_HOST=$smtp_host
-        SMTP_PORT=$(prompt_input "SMTP 포트" "587" "validate_port")
-        SMTP_USER=$(prompt_input "SMTP 사용자명" "" "")
-        SMTP_PASS=$(prompt_input "SMTP 비밀번호" "" "")
+        SMTP_PORT=$(prompt_input "SMTP Port" "587" "validate_port")
+        SMTP_USER=$(prompt_input "SMTP Username" "" "")
+        SMTP_PASS=$(prompt_input "SMTP Password" "" "")
     fi
     
     log "INFO" "Supabase 환경변수 설정 완료"
